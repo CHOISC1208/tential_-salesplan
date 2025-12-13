@@ -37,6 +37,9 @@ export default function DashboardPage() {
   })
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
+  const [showSqlModal, setShowSqlModal] = useState(false)
+  const [categorySql, setCategorySql] = useState('')
+  const [currentCategoryName, setCurrentCategoryName] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -86,6 +89,36 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error('Error creating category:', error)
+    }
+  }
+
+  const showSql = async (categoryName: string) => {
+    try {
+      // カテゴリ名と同じファイル名のSQLファイルを読み込む
+      const response = await fetch(`/sql/${categoryName}.sql`)
+
+      if (!response.ok) {
+        alert(`このカテゴリ用のSQLファイルが見つかりません。\n場所: public/sql/${categoryName}.sql`)
+        return
+      }
+
+      const sql = await response.text()
+      setCategorySql(sql)
+      setCurrentCategoryName(categoryName)
+      setShowSqlModal(true)
+    } catch (error) {
+      console.error('Error loading SQL:', error)
+      alert(`SQLファイルの読み込みに失敗しました。\n場所: public/sql/${categoryName}.sql`)
+    }
+  }
+
+  const copySqlToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(categorySql)
+      alert('SQLをクリップボードにコピーしました')
+    } catch (error) {
+      console.error('Error copying to clipboard:', error)
+      alert('コピーに失敗しました')
     }
   }
 
@@ -209,6 +242,16 @@ export default function DashboardPage() {
                   {/* Sessions List */}
                   {isExpanded && (
                     <div className="bg-gray-50 border-t border-gray-200">
+                      {/* SQL Button */}
+                      <div className="p-4 border-b border-gray-200">
+                        <button
+                          onClick={() => showSql(category.name)}
+                          className="btn btn-secondary"
+                        >
+                          SQL表示
+                        </button>
+                      </div>
+
                       {filteredSessions.length > 0 ? (
                         <div className="p-4 space-y-3">
                           {filteredSessions.map((session) => (
@@ -353,6 +396,36 @@ export default function DashboardPage() {
                 className="btn btn-secondary flex-1"
               >
                 キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SQL Modal */}
+      {showSqlModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-3xl">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">
+              {currentCategoryName} - SQL
+            </h2>
+            <div className="mb-4">
+              <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto text-sm text-gray-900 border border-gray-300">
+                {categorySql}
+              </pre>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={copySqlToClipboard}
+                className="btn btn-primary flex-1"
+              >
+                コピー
+              </button>
+              <button
+                onClick={() => setShowSqlModal(false)}
+                className="btn btn-secondary flex-1"
+              >
+                閉じる
               </button>
             </div>
           </div>

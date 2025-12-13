@@ -68,8 +68,6 @@ export default function SessionPage() {
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState(false)
   const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [showSqlModal, setShowSqlModal] = useState(false)
-  const [categorySql, setCategorySql] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -332,38 +330,6 @@ export default function SessionPage() {
     } catch (error) {
       console.error('Error deleting category:', error)
       alert('カテゴリの削除に失敗しました')
-    }
-  }
-
-  const showSql = async () => {
-    if (!category) return
-
-    try {
-      // カテゴリ名と同じファイル名のSQLファイルを読み込む
-      // 例: public/sql/SLEEP寝具.sql
-      const response = await fetch(`/sql/${category.name}.sql`)
-
-      if (!response.ok) {
-        alert(`このカテゴリ用のSQLファイルが見つかりません。\n場所: public/sql/${category.name}.sql`)
-        return
-      }
-
-      const sql = await response.text()
-      setCategorySql(sql)
-      setShowSqlModal(true)
-    } catch (error) {
-      console.error('Error loading SQL:', error)
-      alert(`SQLファイルの読み込みに失敗しました。\n場所: public/sql/${category.name}.sql`)
-    }
-  }
-
-  const copySqlToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(categorySql)
-      alert('SQLをクリップボードにコピーしました')
-    } catch (error) {
-      console.error('Error copying to clipboard:', error)
-      alert('コピーに失敗しました')
     }
   }
 
@@ -734,9 +700,6 @@ export default function SessionPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={showSql} className="btn btn-secondary">
-                SQL
-              </button>
               {skuData.length === 0 && (
                 <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
                   <Upload size={20} />
@@ -975,36 +938,6 @@ export default function SessionPage() {
                 className="btn btn-secondary flex-1"
               >
                 キャンセル
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SQL Modal */}
-      {showSqlModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-full max-w-3xl">
-            <h2 className="text-xl font-bold mb-4 text-gray-900">
-              {category?.name} - SQL
-            </h2>
-            <div className="mb-4">
-              <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto text-sm text-gray-900 border border-gray-300">
-                {categorySql}
-              </pre>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={copySqlToClipboard}
-                className="btn btn-primary flex-1"
-              >
-                コピー
-              </button>
-              <button
-                onClick={() => setShowSqlModal(false)}
-                className="btn btn-secondary flex-1"
-              >
-                閉じる
               </button>
             </div>
           </div>
