@@ -8,6 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["sales_plane"]
 }
 
 model User {
@@ -20,6 +21,7 @@ model User {
   categories    Category[]
 
   @@map("users")
+  @@schema("sales_plane")
 }
 
 model Category {
@@ -32,6 +34,7 @@ model Category {
   sessions  Session[]
 
   @@map("categories")
+  @@schema("sales_plane")
 }
 
 model Session {
@@ -48,12 +51,15 @@ model Session {
   allocations           Allocation[]
 
   @@map("sessions")
+  @@schema("sales_plane")
 }
 
 enum SessionStatus {
   draft
   confirmed
   archived
+
+  @@schema("sales_plane")
 }
 
 model HierarchyDefinition {
@@ -66,6 +72,7 @@ model HierarchyDefinition {
 
   @@unique([sessionId, level])
   @@map("hierarchy_definitions")
+  @@schema("sales_plane")
 }
 
 model SkuData {
@@ -79,6 +86,7 @@ model SkuData {
 
   @@unique([sessionId, skuCode])
   @@map("sku_data")
+  @@schema("sales_plane")
 }
 
 model Allocation {
@@ -94,4 +102,5 @@ model Allocation {
 
   @@unique([sessionId, hierarchyPath])
   @@map("allocations")
+  @@schema("sales_plane")
 }
