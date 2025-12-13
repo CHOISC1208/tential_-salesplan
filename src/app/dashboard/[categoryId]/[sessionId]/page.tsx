@@ -63,6 +63,11 @@ export default function SessionPage() {
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showBudgetEditModal, setShowBudgetEditModal] = useState(false)
+  const [newBudget, setNewBudget] = useState('')
+  const [showDeleteSessionModal, setShowDeleteSessionModal] = useState(false)
+  const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -244,15 +249,101 @@ export default function SessionPage() {
 
   const saveAllocations = async () => {
     try {
-      await fetch(`/api/sessions/${params.sessionId}/allocations`, {
+      // amount を文字列から数値に変換
+      const allocationsToSave = allocations.map(a => ({
+        ...a,
+        amount: parseInt(a.amount)
+      }))
+
+      const response = await fetch(`/api/sessions/${params.sessionId}/allocations`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allocations })
+        body: JSON.stringify({ allocations: allocationsToSave })
       })
-      alert('保存しました')
+
+      if (response.ok) {
+        alert('保存しました')
+      } else {
+        const errorData = await response.json()
+        console.error('Save error:', errorData)
+        alert(`保存に失敗しました: ${errorData.error || '不明なエラー'}`)
+      }
     } catch (error) {
       console.error('Error saving allocations:', error)
       alert('保存に失敗しました')
+    }
+  }
+
+  const updateBudget = async () => {
+    if (!newBudget || parseInt(newBudget) <= 0) {
+      alert('有効な予算額を入力してください')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${params.sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalBudget: parseInt(newBudget) })
+      })
+
+      if (response.ok) {
+        setShowBudgetEditModal(false)
+        setNewBudget('')
+        loadData()
+        alert('予算額を更新しました')
+      } else {
+        alert('予算額の更新に失敗しました')
+      }
+    } catch (error) {
+      console.error('Error updating budget:', error)
+      alert('予算額の更新に失敗しました')
+    }
+  }
+
+  const deleteSession = async () => {
+    if (deleteConfirmText !== '削除') {
+      alert('「削除」と入力してください')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${params.sessionId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        alert('セッションを削除しました')
+        router.push(`/dashboard`)
+      } else {
+        alert('セッションの削除に失敗しました')
+      }
+    } catch (error) {
+      console.error('Error deleting session:', error)
+      alert('セッションの削除に失敗しました')
+    }
+  }
+
+  const deleteCategory = async () => {
+    if (deleteConfirmText !== '削除') {
+      alert('「削除」と入力してください')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/categories/${params.categoryId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        alert('カテゴリを削除しました')
+        router.push('/dashboard')
+      } else {
+        alert('カテゴリの削除に失敗しました')
+      }
+    } catch (error) {
+      console.error('Error deleting category:', error)
+      alert('カテゴリの削除に失敗しました')
     }
   }
 
@@ -583,13 +674,43 @@ export default function SessionPage() {
                 <ArrowLeft size={20} />
               </button>
               <div>
-                <div className="text-sm text-gray-600 mb-1">
-                  {category?.name} &gt; {session.name}
+                <div className="text-sm text-gray-600 mb-1 flex items-center gap-2">
+                  <span>{category?.name}</span>
+                  <button
+                    onClick={() => {
+                      setDeleteConfirmText('')
+                      setShowDeleteCategoryModal(true)
+                    }}
+                    className="text-xs text-red-600 hover:text-red-800"
+                  >
+                    [削除]
+                  </button>
+                  <span> &gt; {session.name}</span>
+                  <button
+                    onClick={() => {
+                      setDeleteConfirmText('')
+                      setShowDeleteSessionModal(true)
+                    }}
+                    className="text-xs text-red-600 hover:text-red-800"
+                  >
+                    [削除]
+                  </button>
                 </div>
                 <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
-                <p className="text-gray-700">
-                  総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-gray-700">
+                    総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setNewBudget(session.totalBudget)
+                      setShowBudgetEditModal(true)
+                    }}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    [編集]
+                  </button>
+                </div>
               </div>
             </div>
             <div className="flex gap-2">
@@ -715,6 +836,122 @@ export default function SessionPage() {
                 }}
                 className="btn btn-secondary flex-1"
                 disabled={uploading}
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Budget Edit Modal */}
+      {showBudgetEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">予算額の編集</h2>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-900 mb-2">新しい予算額</label>
+              <input
+                type="number"
+                value={newBudget}
+                onChange={(e) => setNewBudget(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="100000000"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={updateBudget}
+                className="btn btn-primary flex-1"
+              >
+                更新
+              </button>
+              <button
+                onClick={() => {
+                  setShowBudgetEditModal(false)
+                  setNewBudget('')
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Session Modal */}
+      {showDeleteSessionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-red-600">セッションの削除</h2>
+            <p className="text-gray-900 mb-4">
+              本当にこのセッションを削除しますか？この操作は元に戻せません。
+            </p>
+            <p className="text-gray-900 mb-2 font-semibold">
+              削除するには「削除」と入力してください：
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 mb-4"
+              placeholder="削除"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={deleteSession}
+                className="btn bg-red-600 text-white hover:bg-red-700 flex-1"
+                disabled={deleteConfirmText !== '削除'}
+              >
+                削除
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteSessionModal(false)
+                  setDeleteConfirmText('')
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Category Modal */}
+      {showDeleteCategoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-red-600">カテゴリの削除</h2>
+            <p className="text-gray-900 mb-4">
+              本当にこのカテゴリとそのすべてのセッションを削除しますか？この操作は元に戻せません。
+            </p>
+            <p className="text-gray-900 mb-2 font-semibold">
+              削除するには「削除」と入力してください：
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 mb-4"
+              placeholder="削除"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={deleteCategory}
+                className="btn bg-red-600 text-white hover:bg-red-700 flex-1"
+                disabled={deleteConfirmText !== '削除'}
+              >
+                削除
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteCategoryModal(false)
+                  setDeleteConfirmText('')
+                }}
+                className="btn btn-secondary flex-1"
               >
                 キャンセル
               </button>
