@@ -1,129 +1,177 @@
-# 予算配分システム
+# 予算配分システム (Budget Allocation System)
 
-階層的な商品マスタに対して予算を配分し、各SKUの発注数量を算出するWebアプリケーション
+階層的な予算配分を管理するためのWebアプリケーションです。
+
+## 機能
+
+- ユーザー認証（登録・ログイン）
+- カテゴリとセッションの管理
+- CSV取り込みによるSKUデータの一括登録
+- 階層的な予算配分（最大6階層）
+- 配分額の自動計算（親の配分額に基づく階層的計算）
+- 均等配分機能
+- セッション検索・フィルタリング
+- カテゴリ別SQL定義の表示
 
 ## 技術スタック
 
-- **フロントエンド**: Next.js 15, TypeScript, Tailwind CSS
-- **バックエンド**: Next.js API Routes, Prisma ORM
+- **フレームワーク**: Next.js 15 (App Router)
+- **言語**: TypeScript
 - **データベース**: PostgreSQL
+- **ORM**: Prisma
 - **認証**: NextAuth.js
-- **その他**: Zod (バリデーション), PapaParse (CSV処理)
+- **スタイリング**: Tailwind CSS
+- **デプロイ**: Heroku
 
-## セットアップ
+## ローカル開発環境のセットアップ
 
-### 1. 依存関係のインストール
+### 前提条件
+
+- Node.js 20以上
+- PostgreSQL
+- npm または yarn
+
+### インストール手順
+
+1. リポジトリをクローン
+
+```bash
+git clone <repository-url>
+cd tential_-salesplan
+```
+
+2. 依存関係をインストール
 
 ```bash
 npm install
 ```
 
-### 2. 環境変数の設定
+3. 環境変数を設定
 
-`.env.example` を `.env` にコピーして、データベース接続情報を設定してください。
+`.env.example`を`.env`にコピーして、必要な環境変数を設定：
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` ファイルを編集：
+`.env`ファイルを編集：
 
 ```env
 DATABASE_URL="postgresql://user:password@localhost:5432/budget_allocation?schema=public"
-NEXTAUTH_SECRET="your-secret-key-here"
+NEXTAUTH_SECRET="your-secret-key"
 NEXTAUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+NODE_ENV="development"
 ```
 
-### 3. データベースのセットアップ
-
-Prismaマイグレーションを実行してデータベースのテーブルを作成します。
+4. データベースのセットアップ
 
 ```bash
-npx prisma migrate dev --name init
-npx prisma generate
+# PostgreSQLに接続してスキーマを作成
+psql -U postgres
+CREATE DATABASE budget_allocation;
+\c budget_allocation
+CREATE SCHEMA sales_plane;
+\q
+
+# Prismaマイグレーションを実行
+npx prisma db push
+
+# または、マイグレーションファイルがある場合
+npx prisma migrate dev
 ```
 
-### 4. 開発サーバーの起動
+5. 開発サーバーを起動
 
 ```bash
 npm run dev
 ```
 
-ブラウザで http://localhost:3000 を開いてください。
+ブラウザで http://localhost:3000 にアクセス
 
-## 主要機能
+## Herokuへのデプロイ
 
-### Phase 1: MVP
+詳細な手順は [HEROKU_DEPLOYMENT.md](./HEROKU_DEPLOYMENT.md) を参照してください。
 
-- [x] ユーザー認証 (登録・ログイン)
-- [x] カテゴリ・セッション管理
-- [x] CSV取り込み (階層自動認識)
-- [x] 予算配分 (Level 1, 2対応)
-- [x] 数量計算
-- [x] CSVエクスポート
+### クイックスタート
 
-### Phase 2: 今後の拡張予定
+```bash
+# Herokuアプリを作成
+heroku create your-app-name
 
-- [ ] 動的階層対応 (Level 3+)
-- [ ] 履歴管理
-- [ ] セッション間比較機能
-- [ ] 権限管理
-- [ ] リアルタイム共同編集
-- [ ] 承認ワークフロー
-- [ ] ダッシュボード・分析
+# PostgreSQLアドオンを追加
+heroku addons:create heroku-postgresql:essential-0
 
-## CSVフォーマット
+# 環境変数を設定
+heroku config:set NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+heroku config:set NEXTAUTH_URL="https://your-app-name.herokuapp.com"
+heroku config:set NEXT_PUBLIC_APP_URL="https://your-app-name.herokuapp.com"
+heroku config:set NODE_ENV="production"
 
-### 必須カラム
+# デプロイ
+git push heroku main
 
-- `sku_code`: SKU識別コード
-- `unitprice`: 単価
+# スキーマを適用（初回のみ）
+heroku pg:psql
+CREATE SCHEMA IF NOT EXISTS sales_plane;
+\q
+heroku run npx prisma db push
+```
 
-### 階層カラム (可変)
+## プロジェクト構成
 
-`sku_code` と `unitprice` 以外のカラムは自動的に階層として認識されます。
+```
+tential_-salesplan/
+├── src/
+│   ├── app/                 # Next.js App Router
+│   │   ├── api/            # API Routes
+│   │   ├── dashboard/      # ダッシュボードページ
+│   │   ├── login/          # ログインページ
+│   │   └── register/       # 登録ページ
+│   ├── lib/                # ユーティリティ
+│   └── types/              # TypeScript型定義
+├── prisma/
+│   └── schema.prisma       # Prismaスキーマ
+├── public/
+│   └── sql/                # カテゴリ別SQL定義
+├── .env.example            # 環境変数テンプレート
+├── Procfile                # Heroku設定
+└── HEROKU_DEPLOYMENT.md    # デプロイガイド
+```
 
-### サンプルCSV
+## 使い方
+
+### 1. ユーザー登録
+
+`/register` にアクセスして、新しいユーザーアカウントを作成します。
+
+### 2. カテゴリの作成
+
+ダッシュボードで「カテゴリ作成」ボタンをクリックして、新しいカテゴリを作成します。
+
+### 3. セッションの作成
+
+カテゴリを展開して、「セッション作成」ボタンをクリック。セッション名と総予算を入力します。
+
+### 4. CSV取り込み
+
+セッション詳細ページで「CSV取り込み」ボタンをクリックし、SKUデータをアップロードします。
+
+**CSVフォーマット例:**
 
 ```csv
 category,raw_materials,launch_year,item_name,size,color,sku_code,unitprice
-SLEEPマットレス,ポリエステル,2023SS,商品A,S,ホワイト,100001,30000
-SLEEPマットレス,ポリエステル,2023SS,商品A,S,ブラック,100002,30000
-SLEEPマットレス,ウレタン,2023SS,商品B,M,グレー,100003,35000
-SLEEP枕,ポリエステル,2024AW,商品C,なし,ホワイト,200001,5000
+SLEEP寝具,コットン,2023,枕,標準,ホワイト,SKU001,5000
 ```
 
-## プロジェクト構造
+### 5. 予算配分
 
-```
-budget-allocation-system/
-├── prisma/
-│   └── schema.prisma          # データベーススキーマ
-├── src/
-│   ├── app/
-│   │   ├── api/               # APIエンドポイント
-│   │   ├── dashboard/         # ダッシュボード画面
-│   │   ├── login/             # ログイン画面
-│   │   ├── register/          # 登録画面
-│   │   └── layout.tsx         # ルートレイアウト
-│   ├── components/            # 共有コンポーネント
-│   ├── lib/                   # ユーティリティ
-│   └── types/                 # TypeScript型定義
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-## デプロイ
-
-### Vercelへのデプロイ
-
-1. GitHubリポジトリと連携
-2. Vercelでプロジェクトをインポート
-3. 環境変数を設定
-4. データベース接続 (Neon/Supabaseなど)
-5. デプロイ
+階層ごとにパーセンテージを入力して予算を配分します。配分額は親の配分額に基づいて自動計算されます。
 
 ## ライセンス
 
-MIT
+Private
+
+## サポート
+
+問題が発生した場合は、Issueを作成してください。
