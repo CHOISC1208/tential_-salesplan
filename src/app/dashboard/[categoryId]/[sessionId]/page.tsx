@@ -154,7 +154,15 @@ export default function SessionPage() {
             loadData()
             alert('CSVを正常にアップロードしました')
           } else {
-            alert('アップロードに失敗しました')
+            const errorData = await response.json()
+            if (errorData.details) {
+              const errorMessages = errorData.details.map((err: any) =>
+                `${err.path.join('.')}: ${err.message}`
+              ).join('\n')
+              alert(`アップロードに失敗しました:\n${errorMessages}`)
+            } else {
+              alert(`アップロードに失敗しました: ${errorData.error || '不明なエラー'}`)
+            }
           }
         } catch (error) {
           console.error('Error uploading CSV:', error)

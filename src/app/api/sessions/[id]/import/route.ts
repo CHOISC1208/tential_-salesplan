@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 const skuDataSchema = z.object({
   skuCode: z.string(),
-  unitPrice: z.number().int().positive(),
+  unitPrice: z.number().int().nonnegative(),
   hierarchyValues: z.record(z.string())
 })
 
