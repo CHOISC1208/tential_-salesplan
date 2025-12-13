@@ -1,0 +1,97 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  passwordHash  String     @map("password_hash")
+  name          String?
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  categories    Category[]
+
+  @@map("users")
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  name      String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions  Session[]
+
+  @@map("categories")
+}
+
+model Session {
+  id                    String                 @id @default(uuid())
+  categoryId            String                 @map("category_id")
+  name                  String
+  totalBudget           BigInt                 @map("total_budget")
+  status                SessionStatus          @default(draft)
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  category              Category               @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  hierarchyDefinitions  HierarchyDefinition[]
+  skuData               SkuData[]
+  allocations           Allocation[]
+
+  @@map("sessions")
+}
+
+enum SessionStatus {
+  draft
+  confirmed
+  archived
+}
+
+model HierarchyDefinition {
+  id           String   @id @default(uuid())
+  sessionId    String   @map("session_id")
+  level        Int
+  columnName   String   @map("column_name")
+  displayOrder Int      @map("display_order")
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, level])
+  @@map("hierarchy_definitions")
+}
+
+model SkuData {
+  id               String   @id @default(uuid())
+  sessionId        String   @map("session_id")
+  skuCode          String   @map("sku_code")
+  unitPrice        Int      @map("unit_price")
+  hierarchyValues  Json     @map("hierarchy_values")
+  createdAt        DateTime @default(now()) @map("created_at")
+  session          Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, skuCode])
+  @@map("sku_data")
+}
+
+model Allocation {
+  id            String   @id @default(uuid())
+  sessionId     String   @map("session_id")
+  hierarchyPath String   @map("hierarchy_path")
+  level         Int
+  percentage    Decimal  @db.Decimal(5, 2)
+  amount        BigInt
+  quantity      Int
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, hierarchyPath])
+  @@map("allocations")
+}
