@@ -62,6 +62,7 @@ export default function SessionPage() {
   const [category, setCategory] = useState<{ id: string; name: string } | null>(null)
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -624,15 +625,24 @@ export default function SessionPage() {
               <div className="card">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-semibold text-gray-900">階層レベル選択</h3>
-                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <div className="flex items-center gap-4">
                     <input
-                      type="checkbox"
-                      checked={showIncompleteOnly}
-                      onChange={(e) => setShowIncompleteOnly(e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      type="text"
+                      placeholder="検索..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    未完了のみ表示
-                  </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={showIncompleteOnly}
+                        onChange={(e) => setShowIncompleteOnly(e.target.checked)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      未完了のみ表示
+                    </label>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {session.hierarchyDefinitions.map((def) => {
@@ -722,6 +732,13 @@ export default function SessionPage() {
 
     if (currentLevel === 1) {
       // Level 1 view: simple list
+      // 検索フィルタ
+      const filteredNodes = searchQuery
+        ? nodesAtLevel.filter(node =>
+            node.name.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        : nodesAtLevel
+
       const total = calculateLevelTotal(nodesAtLevel)
       const isValid = Math.abs(total - 100) < 0.01
 
@@ -739,6 +756,11 @@ export default function SessionPage() {
                   {!isValid && ' (100%にしてください)'}
                 </span>
               </div>
+              {searchQuery && (
+                <span className="text-sm text-gray-600">
+                  (検索結果: {filteredNodes.length}件)
+                </span>
+              )}
             </div>
             <button
               onClick={() => equalDistribution(null, 1)}
@@ -760,7 +782,7 @@ export default function SessionPage() {
               </tr>
             </thead>
             <tbody>
-              {nodesAtLevel.map((node) => (
+              {filteredNodes.map((node) => (
                 <tr key={node.path} className="border-b hover:bg-gray-50">
                   <td className="py-2 px-4 text-gray-900">{node.name}</td>
                   <td className="text-right py-2 px-4">
@@ -817,12 +839,25 @@ export default function SessionPage() {
       })
 
       // フィルタ: 未完了のみ表示
-      const filteredGroups = showIncompleteOnly
+      let filteredGroups = showIncompleteOnly
         ? groups.filter(({ children }) => {
             const total = calculateLevelTotal(children)
             return Math.abs(total - 100) >= 0.01 // 100%でない
           })
         : groups
+
+      // 検索フィルタ
+      if (searchQuery) {
+        filteredGroups = filteredGroups.filter(({ parentPath, children }) => {
+          // 親パスに検索文字列が含まれるか
+          const parentMatches = parentPath.toLowerCase().includes(searchQuery.toLowerCase())
+          // 子の名前に検索文字列が含まれるか
+          const childMatches = children.some(child =>
+            child.name.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+          return parentMatches || childMatches
+        })
+      }
 
       return (
         <div>
@@ -832,6 +867,11 @@ export default function SessionPage() {
               {showIncompleteOnly && (
                 <span className="text-sm text-gray-600 ml-2">
                   (未完了のみ: {filteredGroups.length}件)
+                </span>
+              )}
+              {searchQuery && !showIncompleteOnly && (
+                <span className="text-sm text-gray-600 ml-2">
+                  (検索結果: {filteredGroups.length}件)
                 </span>
               )}
             </h3>
