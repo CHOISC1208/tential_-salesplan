@@ -3,7 +3,7 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Upload, Download, Save, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
+import { ArrowLeft, Upload, Download, Save, ChevronDown, ChevronRight, AlertCircle, Check, Menu } from 'lucide-react'
 import Papa from 'papaparse'
 
 interface Session {
@@ -59,6 +59,9 @@ export default function SessionPage() {
   const [uploading, setUploading] = useState(false)
   const [currentLevel, setCurrentLevel] = useState(1)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [category, setCategory] = useState<{ id: string; name: string } | null>(null)
+  const [sessions, setSessions] = useState<Session[]>([])
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -70,10 +73,12 @@ export default function SessionPage() {
 
   const loadData = async () => {
     try {
-      const [sessionRes, skuRes, allocRes] = await Promise.all([
+      const [sessionRes, skuRes, allocRes, categoryRes, sessionsRes] = await Promise.all([
         fetch(`/api/sessions/${params.sessionId}`),
         fetch(`/api/sessions/${params.sessionId}/sku-data`),
-        fetch(`/api/sessions/${params.sessionId}/allocations`)
+        fetch(`/api/sessions/${params.sessionId}/allocations`),
+        fetch(`/api/categories/${params.categoryId}`),
+        fetch(`/api/categories/${params.categoryId}/sessions`)
       ])
 
       if (sessionRes.ok) {
@@ -89,6 +94,16 @@ export default function SessionPage() {
       if (allocRes.ok) {
         const allocationsData = await allocRes.json()
         setAllocations(allocationsData)
+      }
+
+      if (categoryRes.ok) {
+        const categoryData = await categoryRes.json()
+        setCategory(categoryData)
+      }
+
+      if (sessionsRes.ok) {
+        const sessionsData = await sessionsRes.json()
+        setSessions(sessionsData)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -303,12 +318,43 @@ export default function SessionPage() {
     const equalPercentage = 100 / nodesToDistribute.length
     const remainder = 100 - (Math.floor(equalPercentage * 100) / 100) * nodesToDistribute.length
 
+    // 一度にすべての割り当てを更新（バグ修正）
+    const totalBudget = parseInt(session.totalBudget)
+    const newAllocations = [...allocations]
+
     nodesToDistribute.forEach((node, index) => {
       const percentage = index === 0
         ? equalPercentage + remainder
         : equalPercentage
-      updateAllocation(node.path, percentage)
+
+      const amount = Math.floor(totalBudget * (percentage / 100))
+      const relatedSkus = skuData.filter(sku => {
+        const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, node.path.split('/').length)
+        return skuPath === node.path
+      })
+      const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
+      const quantity = totalUnitPrice > 0 ? Math.floor(amount / totalUnitPrice) : 0
+
+      const existingIndex = newAllocations.findIndex(a => a.hierarchyPath === node.path)
+      if (existingIndex >= 0) {
+        newAllocations[existingIndex] = {
+          ...newAllocations[existingIndex],
+          percentage,
+          amount: amount.toString(),
+          quantity
+        }
+      } else {
+        newAllocations.push({
+          hierarchyPath: node.path,
+          level: node.path.split('/').length,
+          percentage,
+          amount: amount.toString(),
+          quantity
+        })
+      }
     })
+
+    setAllocations(newAllocations)
   }
 
   const getNodesByLevel = (level: number): HierarchyNode[] => {
@@ -414,6 +460,69 @@ export default function SessionPage() {
     }
   }, [hierarchyTree])
 
+  // 子が1つだけのグループは自動で100%設定
+  useEffect(() => {
+    if (!session || hierarchyTree.length === 0) return
+
+    const newAllocations = [...allocations]
+    let hasChanges = false
+
+    // 各レベルをチェック
+    for (let level = 2; level <= session.hierarchyDefinitions.length; level++) {
+      const parentPaths = new Set<string>()
+      const nodesAtLevel = getNodesByLevel(level)
+
+      nodesAtLevel.forEach(node => {
+        const parentPath = getParentPath(node.path)
+        if (parentPath) parentPaths.add(parentPath)
+      })
+
+      parentPaths.forEach(parentPath => {
+        const children = getChildrenByParent(parentPath, level)
+
+        // 子が1つだけで、まだ割合が設定されていない場合
+        if (children.length === 1) {
+          const child = children[0]
+          const existingAlloc = newAllocations.find(a => a.hierarchyPath === child.path)
+
+          if (!existingAlloc || existingAlloc.percentage === 0) {
+            const totalBudget = parseInt(session.totalBudget)
+            const amount = Math.floor(totalBudget * 1) // 100%
+            const relatedSkus = skuData.filter(sku => {
+              const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, child.path.split('/').length)
+              return skuPath === child.path
+            })
+            const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
+            const quantity = totalUnitPrice > 0 ? Math.floor(amount / totalUnitPrice) : 0
+
+            const existingIndex = newAllocations.findIndex(a => a.hierarchyPath === child.path)
+            if (existingIndex >= 0) {
+              newAllocations[existingIndex] = {
+                ...newAllocations[existingIndex],
+                percentage: 100,
+                amount: amount.toString(),
+                quantity
+              }
+            } else {
+              newAllocations.push({
+                hierarchyPath: child.path,
+                level: child.path.split('/').length,
+                percentage: 100,
+                amount: amount.toString(),
+                quantity
+              })
+            }
+            hasChanges = true
+          }
+        }
+      })
+    }
+
+    if (hasChanges) {
+      setAllocations(newAllocations)
+    }
+  }, [hierarchyTree, session, skuData])
+
   if (status === 'loading' || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -431,22 +540,58 @@ export default function SessionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button onClick={() => router.push('/dashboard')} className="btn btn-secondary">
-                <ArrowLeft size={20} />
+    <div className="min-h-screen bg-gray-100 flex">
+      {/* Sidebar */}
+      <div className={`bg-white shadow-lg transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-0'} overflow-hidden`}>
+        <div className="p-4 border-b">
+          <h2 className="text-lg font-bold text-gray-900">{category?.name || 'カテゴリ'}</h2>
+        </div>
+        <div className="p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">セッション一覧</h3>
+          <div className="space-y-2">
+            {sessions.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => router.push(`/dashboard/${params.categoryId}/${s.id}`)}
+                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
+                  s.id === params.sessionId
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                }`}
+              >
+                <div className="font-medium truncate">{s.name}</div>
+                <div className="text-xs opacity-80">
+                  ¥{parseInt(s.totalBudget).toLocaleString()}
+                </div>
               </button>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
-                <p className="text-gray-700">
-                  総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                </p>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col">
+        <header className="bg-white shadow">
+          <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  className="btn btn-secondary"
+                >
+                  <Menu size={20} />
+                </button>
+                <button onClick={() => router.push('/dashboard')} className="btn btn-secondary">
+                  <ArrowLeft size={20} />
+                </button>
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
+                  <p className="text-gray-700">
+                    総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                  </p>
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2">
+              <div className="flex gap-2">
               <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
                 <Upload size={20} />
                 CSV取り込み
@@ -550,6 +695,7 @@ export default function SessionPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 
@@ -681,6 +827,15 @@ export default function SessionPage() {
             const total = calculateLevelTotal(children)
             const isValid = Math.abs(total - 100) < 0.01
 
+            // 親パスを階層ごとに分割
+            const pathParts = parentPath.split('/')
+            const displayName = pathParts[pathParts.length - 1] // 最後の階層のみ表示
+
+            // ツールチップ用の階層詳細
+            const tooltipContent = pathParts.map((part, index) =>
+              `階層${index + 1}: ${part}`
+            ).join('\n')
+
             return (
               <div key={parentPath} className="mb-6">
                 {/* Parent row */}
@@ -690,8 +845,11 @@ export default function SessionPage() {
                 >
                   <div className="flex items-center gap-2">
                     {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                    <span className="font-medium text-gray-900">
-                      {parentPath}
+                    <span
+                      className="font-medium text-gray-900"
+                      title={tooltipContent}
+                    >
+                      {displayName}
                       {parentNode && ` (${parentNode.percentage.toFixed(2)}% = ¥${parentNode.amount.toLocaleString()})`}
                     </span>
                     <div className={`flex items-center gap-1 text-sm ${isValid ? 'text-green-600' : 'text-red-600'}`}>
