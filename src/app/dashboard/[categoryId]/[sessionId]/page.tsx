@@ -3,7 +3,7 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Upload, Download, Save, ChevronDown, ChevronRight, AlertCircle, Check, Menu } from 'lucide-react'
+import { ArrowLeft, Upload, Download, Save, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
 import Papa from 'papaparse'
 
 interface Session {
@@ -59,10 +59,9 @@ export default function SessionPage() {
   const [uploading, setUploading] = useState(false)
   const [currentLevel, setCurrentLevel] = useState(1)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [category, setCategory] = useState<{ id: string; name: string } | null>(null)
-  const [sessions, setSessions] = useState<Session[]>([])
   const [hoveredPath, setHoveredPath] = useState<string | null>(null)
+  const [showIncompleteOnly, setShowIncompleteOnly] = useState(false)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -74,12 +73,11 @@ export default function SessionPage() {
 
   const loadData = async () => {
     try {
-      const [sessionRes, skuRes, allocRes, categoryRes, sessionsRes] = await Promise.all([
+      const [sessionRes, skuRes, allocRes, categoryRes] = await Promise.all([
         fetch(`/api/sessions/${params.sessionId}`),
         fetch(`/api/sessions/${params.sessionId}/sku-data`),
         fetch(`/api/sessions/${params.sessionId}/allocations`),
-        fetch(`/api/categories/${params.categoryId}`),
-        fetch(`/api/categories/${params.categoryId}/sessions`)
+        fetch(`/api/categories/${params.categoryId}`)
       ])
 
       if (sessionRes.ok) {
@@ -100,11 +98,6 @@ export default function SessionPage() {
       if (categoryRes.ok) {
         const categoryData = await categoryRes.json()
         setCategory(categoryData)
-      }
-
-      if (sessionsRes.ok) {
-        const sessionsData = await sessionsRes.json()
-        setSessions(sessionsData)
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -392,6 +385,45 @@ export default function SessionPage() {
     })
   }
 
+  const calculateProgress = (level: number): { completed: number; total: number; percentage: number } => {
+    const nodesAtLevel = getNodesByLevel(level)
+
+    if (level === 1) {
+      // Level 1: 全体の合計が100%かチェック
+      const total = calculateLevelTotal(nodesAtLevel)
+      const isValid = Math.abs(total - 100) < 0.01
+      return {
+        completed: isValid ? 1 : 0,
+        total: 1,
+        percentage: isValid ? 100 : 0
+      }
+    } else {
+      // Level 2+: 各親グループごとに100%かチェック
+      const parentPaths = new Set<string>()
+      nodesAtLevel.forEach(node => {
+        const parentPath = getParentPath(node.path)
+        if (parentPath) parentPaths.add(parentPath)
+      })
+
+      let completedGroups = 0
+      const totalGroups = parentPaths.size
+
+      parentPaths.forEach(parentPath => {
+        const children = getChildrenByParent(parentPath, level)
+        const total = calculateLevelTotal(children)
+        if (Math.abs(total - 100) < 0.01) {
+          completedGroups++
+        }
+      })
+
+      return {
+        completed: completedGroups,
+        total: totalGroups,
+        percentage: totalGroups > 0 ? (completedGroups / totalGroups) * 100 : 0
+      }
+    }
+  }
+
   const buildHierarchyPath = (sku: SkuData, defs: HierarchyDefinition[], level: number): string => {
     const parts: string[] = []
     for (let i = 0; i < level && i < defs.length; i++) {
@@ -541,58 +573,25 @@ export default function SessionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
-      {/* Sidebar */}
-      <div className={`bg-white shadow-lg transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-0'} overflow-hidden`}>
-        <div className="p-4 border-b">
-          <h2 className="text-lg font-bold text-gray-900">{category?.name || 'カテゴリ'}</h2>
-        </div>
-        <div className="p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">セッション一覧</h3>
-          <div className="space-y-2">
-            {sessions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => router.push(`/dashboard/${params.categoryId}/${s.id}`)}
-                className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-                  s.id === params.sessionId
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
-                }`}
-              >
-                <div className="font-medium truncate">{s.name}</div>
-                <div className="text-xs opacity-80">
-                  ¥{parseInt(s.totalBudget).toLocaleString()}
-                </div>
+    <div className="min-h-screen bg-gray-100">
+      <header className="bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button onClick={() => router.push('/dashboard')} className="btn btn-secondary">
+                <ArrowLeft size={20} />
               </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className="flex-1 flex flex-col">
-        <header className="bg-white shadow">
-          <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                  className="btn btn-secondary"
-                >
-                  <Menu size={20} />
-                </button>
-                <button onClick={() => router.push('/dashboard')} className="btn btn-secondary">
-                  <ArrowLeft size={20} />
-                </button>
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
-                  <p className="text-gray-700">
-                    総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                  </p>
+              <div>
+                <div className="text-sm text-gray-600 mb-1">
+                  {category?.name} &gt; {session.name}
                 </div>
+                <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
+                <p className="text-gray-700">
+                  総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                </p>
               </div>
-              <div className="flex gap-2">
+            </div>
+            <div className="flex gap-2">
               <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
                 <Upload size={20} />
                 CSV取り込み
@@ -620,24 +619,41 @@ export default function SessionPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Level switching buttons */}
+            {/* Level switching buttons with progress */}
             {session && session.hierarchyDefinitions.length > 0 && (
               <div className="card">
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">階層レベル選択</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900">階層レベル選択</h3>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={showIncompleteOnly}
+                      onChange={(e) => setShowIncompleteOnly(e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    未完了のみ表示
+                  </label>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {session.hierarchyDefinitions.map((def) => (
-                    <button
-                      key={def.level}
-                      onClick={() => setCurrentLevel(def.level)}
-                      className={`min-w-[200px] px-6 py-2 rounded-md font-medium transition-colors ${
-                        currentLevel === def.level
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      Level {def.level}: {def.columnName}
-                    </button>
-                  ))}
+                  {session.hierarchyDefinitions.map((def) => {
+                    const progress = calculateProgress(def.level)
+                    return (
+                      <button
+                        key={def.level}
+                        onClick={() => setCurrentLevel(def.level)}
+                        className={`min-w-[200px] px-6 py-2 rounded-md font-medium transition-colors ${
+                          currentLevel === def.level
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        <div>Level {def.level}: {def.columnName}</div>
+                        <div className={`text-xs mt-1 ${currentLevel === def.level ? 'text-blue-100' : 'text-gray-600'}`}>
+                          進捗: {progress.completed}/{progress.total} ({progress.percentage.toFixed(0)}%)
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -696,7 +712,6 @@ export default function SessionPage() {
           </div>
         </div>
       )}
-      </div>
     </div>
   )
 
@@ -801,11 +816,24 @@ export default function SessionPage() {
         }
       })
 
+      // フィルタ: 未完了のみ表示
+      const filteredGroups = showIncompleteOnly
+        ? groups.filter(({ children }) => {
+            const total = calculateLevelTotal(children)
+            return Math.abs(total - 100) >= 0.01 // 100%でない
+          })
+        : groups
+
       return (
         <div>
           <div className="flex items-center justify-between mb-4 pb-3 border-b">
             <h3 className="text-lg font-semibold text-gray-900">
               {session.hierarchyDefinitions[currentLevel - 1]?.columnName}別配分
+              {showIncompleteOnly && (
+                <span className="text-sm text-gray-600 ml-2">
+                  (未完了のみ: {filteredGroups.length}件)
+                </span>
+              )}
             </h3>
             <div className="flex gap-2">
               <button
@@ -823,7 +851,7 @@ export default function SessionPage() {
             </div>
           </div>
 
-          {groups.map(({ parentPath, parentNode, children }) => {
+          {filteredGroups.map(({ parentPath, parentNode, children }) => {
             const isExpanded = expandedGroups.has(parentPath)
             const total = calculateLevelTotal(children)
             const isValid = Math.abs(total - 100) < 0.01
