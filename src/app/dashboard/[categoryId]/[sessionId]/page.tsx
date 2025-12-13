@@ -193,11 +193,66 @@ export default function SessionPage() {
     })
   }
 
+  // 親の配分額を取得する関数
+  const getParentAmount = (path: string, currentAllocations?: Allocation[]): number => {
+    if (!session) return 0
+
+    const pathParts = path.split('/')
+    // 階層1（トップレベル）の場合は総予算を返す
+    if (pathParts.length === 1) {
+      return parseInt(session.totalBudget)
+    }
+
+    // 使用するallocations配列（引数で渡されたものか、現在の状態）
+    const allocsToUse = currentAllocations || allocations
+
+    // 親のパスを取得
+    const parentPath = pathParts.slice(0, -1).join('/')
+    const parentAllocation = allocsToUse.find(a => a.hierarchyPath === parentPath)
+
+    if (parentAllocation) {
+      return parseInt(parentAllocation.amount)
+    }
+
+    // 親の配分が見つからない場合は、再帰的に親を辿る
+    return getParentAmount(parentPath, currentAllocations)
+  }
+
+  // 子孫の配分額を再計算する関数
+  const recalculateDescendants = (updatedAllocations: Allocation[]): Allocation[] => {
+    const result = [...updatedAllocations]
+
+    // 各配分について、親の配分額に基づいて金額を再計算
+    result.forEach((allocation, index) => {
+      const parentAmount = getParentAmount(allocation.hierarchyPath, result)
+      const newAmount = Math.floor(parentAmount * (allocation.percentage / 100))
+
+      // 金額が変わった場合、quantityも再計算
+      if (newAmount.toString() !== allocation.amount) {
+        const relatedSkus = skuData.filter(sku => {
+          const skuPath = buildHierarchyPath(sku, session!.hierarchyDefinitions, allocation.level)
+          return skuPath === allocation.hierarchyPath
+        })
+        const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
+        const quantity = totalUnitPrice > 0 ? Math.floor(newAmount / totalUnitPrice) : 0
+
+        result[index] = {
+          ...allocation,
+          amount: newAmount.toString(),
+          quantity
+        }
+      }
+    })
+
+    return result
+  }
+
   const updateAllocation = (path: string, percentage: number) => {
     if (!session) return
 
-    const totalBudget = parseInt(session.totalBudget)
-    const amount = Math.floor(totalBudget * (percentage / 100))
+    // 親の配分額を取得（階層1の場合は総予算）
+    const parentAmount = getParentAmount(path)
+    const amount = Math.floor(parentAmount * (percentage / 100))
 
     // Find related SKUs
     const relatedSkus = skuData.filter(sku => {
@@ -210,17 +265,18 @@ export default function SessionPage() {
     const quantity = totalUnitPrice > 0 ? Math.floor(amount / totalUnitPrice) : 0
 
     const existingIndex = allocations.findIndex(a => a.hierarchyPath === path)
+    let updated: Allocation[]
+
     if (existingIndex >= 0) {
-      const updated = [...allocations]
+      updated = [...allocations]
       updated[existingIndex] = {
         ...updated[existingIndex],
         percentage,
         amount: amount.toString(),
         quantity
       }
-      setAllocations(updated)
     } else {
-      setAllocations([
+      updated = [
         ...allocations,
         {
           hierarchyPath: path,
@@ -229,8 +285,12 @@ export default function SessionPage() {
           amount: amount.toString(),
           quantity
         }
-      ])
+      ]
     }
+
+    // 子孫の配分額を再計算
+    const recalculated = recalculateDescendants(updated)
+    setAllocations(recalculated)
   }
 
   const saveAllocations = async () => {
@@ -391,7 +451,6 @@ export default function SessionPage() {
     const remainder = 100 - (Math.floor(equalPercentage * 100) / 100) * nodesToDistribute.length
 
     // 一度にすべての割り当てを更新（バグ修正）
-    const totalBudget = parseInt(session.totalBudget)
     const newAllocations = [...allocations]
 
     nodesToDistribute.forEach((node, index) => {
@@ -399,7 +458,9 @@ export default function SessionPage() {
         ? equalPercentage + remainder
         : equalPercentage
 
-      const amount = Math.floor(totalBudget * (percentage / 100))
+      // 親の配分額を取得（階層1の場合は総予算）
+      const parentAmount = getParentAmount(node.path, newAllocations)
+      const amount = Math.floor(parentAmount * (percentage / 100))
       const relatedSkus = skuData.filter(sku => {
         const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, node.path.split('/').length)
         return skuPath === node.path
@@ -426,7 +487,9 @@ export default function SessionPage() {
       }
     })
 
-    setAllocations(newAllocations)
+    // 子孫の配分額を再計算
+    const recalculated = recalculateDescendants(newAllocations)
+    setAllocations(recalculated)
   }
 
   const getNodesByLevel = (level: number): HierarchyNode[] => {
@@ -597,8 +660,9 @@ export default function SessionPage() {
           const existingAlloc = newAllocations.find(a => a.hierarchyPath === child.path)
 
           if (!existingAlloc || existingAlloc.percentage === 0) {
-            const totalBudget = parseInt(session.totalBudget)
-            const amount = Math.floor(totalBudget * 1) // 100%
+            // 親の配分額を取得（階層1の場合は総予算）
+            const parentAmount = getParentAmount(child.path, newAllocations)
+            const amount = Math.floor(parentAmount * 1) // 100%
             const relatedSkus = skuData.filter(sku => {
               const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, child.path.split('/').length)
               return skuPath === child.path
@@ -630,7 +694,9 @@ export default function SessionPage() {
     }
 
     if (hasChanges) {
-      setAllocations(newAllocations)
+      // 子孫の配分額を再計算
+      const recalculated = recalculateDescendants(newAllocations)
+      setAllocations(recalculated)
     }
   }, [hierarchyTree, session, skuData])
 
