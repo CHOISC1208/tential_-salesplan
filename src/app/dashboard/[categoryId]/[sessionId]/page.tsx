@@ -3,7 +3,7 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Upload, Download, Save } from 'lucide-react'
+import { ArrowLeft, Upload, Download, Save, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
 import Papa from 'papaparse'
 
 interface Session {
@@ -57,6 +57,8 @@ export default function SessionPage() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [currentLevel, setCurrentLevel] = useState(1)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -244,6 +246,105 @@ export default function SessionPage() {
     }
   }
 
+  const toggleGroup = (path: string) => {
+    const newExpanded = new Set(expandedGroups)
+    if (newExpanded.has(path)) {
+      newExpanded.delete(path)
+    } else {
+      newExpanded.add(path)
+    }
+    setExpandedGroups(newExpanded)
+  }
+
+  const expandAll = () => {
+    const allPaths = new Set<string>()
+    const collectPaths = (nodes: HierarchyNode[]) => {
+      nodes.forEach(node => {
+        if (node.children.length > 0) {
+          allPaths.add(node.path)
+          collectPaths(node.children)
+        }
+      })
+    }
+    collectPaths(hierarchyTree)
+    setExpandedGroups(allPaths)
+  }
+
+  const collapseAll = () => {
+    setExpandedGroups(new Set())
+  }
+
+  const equalDistribution = (parentPath: string | null, level: number) => {
+    if (!session) return
+
+    // Get all nodes at the current level
+    let nodesToDistribute: HierarchyNode[] = []
+
+    if (parentPath === null) {
+      // Level 1: distribute among all top-level nodes
+      nodesToDistribute = hierarchyTree.filter(n => n.level === level)
+    } else {
+      // Level 2+: find parent and distribute among its children
+      const findChildren = (nodes: HierarchyNode[]): HierarchyNode[] => {
+        for (const node of nodes) {
+          if (node.path === parentPath) {
+            return node.children.filter(c => c.level === level)
+          }
+          const found = findChildren(node.children)
+          if (found.length > 0) return found
+        }
+        return []
+      }
+      nodesToDistribute = findChildren(hierarchyTree)
+    }
+
+    if (nodesToDistribute.length === 0) return
+
+    const equalPercentage = 100 / nodesToDistribute.length
+    const remainder = 100 - (Math.floor(equalPercentage * 100) / 100) * nodesToDistribute.length
+
+    nodesToDistribute.forEach((node, index) => {
+      const percentage = index === 0
+        ? equalPercentage + remainder
+        : equalPercentage
+      updateAllocation(node.path, percentage)
+    })
+  }
+
+  const getNodesByLevel = (level: number): HierarchyNode[] => {
+    const nodes: HierarchyNode[] = []
+    const traverse = (nodeList: HierarchyNode[]) => {
+      nodeList.forEach(node => {
+        if (node.level === level) {
+          nodes.push(node)
+        }
+        traverse(node.children)
+      })
+    }
+    traverse(hierarchyTree)
+    return nodes
+  }
+
+  const calculateLevelTotal = (nodes: HierarchyNode[]): number => {
+    return nodes.reduce((sum, node) => sum + node.percentage, 0)
+  }
+
+  const getParentPath = (path: string): string | null => {
+    const parts = path.split('/')
+    if (parts.length <= 1) return null
+    return parts.slice(0, -1).join('/')
+  }
+
+  const getChildrenByParent = (parentPath: string, level: number): HierarchyNode[] => {
+    const nodes = getNodesByLevel(level)
+    return nodes.filter(node => {
+      const nodeParts = node.path.split('/')
+      if (nodeParts.length !== level) return false
+      const nodeParentPath = nodeParts.slice(0, -1).join('/')
+      return nodeParentPath === parentPath
+    })
+  }
+
   const buildHierarchyPath = (sku: SkuData, defs: HierarchyDefinition[], level: number): string => {
     const parts: string[] = []
     for (let i = 0; i < level && i < defs.length; i++) {
@@ -306,6 +407,13 @@ export default function SessionPage() {
     }
   }, [session, skuData, allocations])
 
+  // デフォルトで全展開
+  useEffect(() => {
+    if (hierarchyTree.length > 0 && expandedGroups.size === 0) {
+      expandAll()
+    }
+  }, [hierarchyTree])
+
   if (status === 'loading' || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -365,20 +473,33 @@ export default function SessionPage() {
             </button>
           </div>
         ) : (
-          <div className="card overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-4 text-gray-900 font-semibold">階層</th>
-                  <th className="text-right py-2 px-4 text-gray-900 font-semibold">割合 (%)</th>
-                  <th className="text-right py-2 px-4 text-gray-900 font-semibold">金額 (円)</th>
-                  <th className="text-right py-2 px-4 text-gray-900 font-semibold">数量</th>
-                </tr>
-              </thead>
-              <tbody>
-                {renderHierarchyNodes(hierarchyTree, updateAllocation)}
-              </tbody>
-            </table>
+          <div className="space-y-4">
+            {/* Level switching buttons */}
+            {session && session.hierarchyDefinitions.length > 0 && (
+              <div className="card">
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">階層レベル選択</h3>
+                <div className="flex flex-wrap gap-2">
+                  {session.hierarchyDefinitions.map((def) => (
+                    <button
+                      key={def.level}
+                      onClick={() => setCurrentLevel(def.level)}
+                      className={`min-w-[200px] px-6 py-2 rounded-md font-medium transition-colors ${
+                        currentLevel === def.level
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Level {def.level}: {def.columnName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Table */}
+            <div className="card overflow-x-auto">
+              {renderLevelView()}
+            </div>
           </div>
         )}
       </main>
@@ -431,6 +552,223 @@ export default function SessionPage() {
       )}
     </div>
   )
+
+  function renderLevelView() {
+    if (!session) return null
+
+    const nodesAtLevel = getNodesByLevel(currentLevel)
+
+    if (currentLevel === 1) {
+      // Level 1 view: simple list
+      const total = calculateLevelTotal(nodesAtLevel)
+      const isValid = Math.abs(total - 100) < 0.01
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-4 pb-3 border-b">
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {session.hierarchyDefinitions[0]?.columnName}別配分
+              </h3>
+              <div className={`flex items-center gap-1 ${isValid ? 'text-green-600' : 'text-red-600'}`}>
+                {isValid ? <Check size={18} /> : <AlertCircle size={18} />}
+                <span className="font-medium">
+                  合計: {total.toFixed(2)}%
+                  {!isValid && ' (100%にしてください)'}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => equalDistribution(null, 1)}
+              className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+            >
+              均等配分
+            </button>
+          </div>
+
+          <table className="w-full">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-2 px-4 text-gray-900 font-semibold">
+                  {session.hierarchyDefinitions[0]?.columnName}
+                </th>
+                <th className="text-right py-2 px-4 text-gray-900 font-semibold">割合 (%)</th>
+                <th className="text-right py-2 px-4 text-gray-900 font-semibold">金額 (円)</th>
+                <th className="text-right py-2 px-4 text-gray-900 font-semibold">数量</th>
+              </tr>
+            </thead>
+            <tbody>
+              {nodesAtLevel.map((node) => (
+                <tr key={node.path} className="border-b hover:bg-gray-50">
+                  <td className="py-2 px-4 text-gray-900">{node.name}</td>
+                  <td className="text-right py-2 px-4">
+                    <input
+                      type="number"
+                      className="w-24 px-2 py-1 border rounded text-right text-gray-900 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={node.percentage}
+                      onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
+                      min="0"
+                      max="100"
+                      step="0.01"
+                    />
+                  </td>
+                  <td className="text-right py-2 px-4 text-gray-900">
+                    ¥{node.amount.toLocaleString()}
+                  </td>
+                  <td className="text-right py-2 px-4 text-gray-900">
+                    {node.quantity.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    } else {
+      // Level 2+ view: grouped by parent
+      const parentPaths = new Set<string>()
+      nodesAtLevel.forEach(node => {
+        const parentPath = getParentPath(node.path)
+        if (parentPath) parentPaths.add(parentPath)
+      })
+
+      const groups: Array<{ parentPath: string; parentNode: HierarchyNode | null; children: HierarchyNode[] }> = []
+
+      parentPaths.forEach(parentPath => {
+        const children = getChildrenByParent(parentPath, currentLevel)
+
+        // Find parent node info
+        let parentNode: HierarchyNode | null = null
+        const findParent = (nodes: HierarchyNode[]): HierarchyNode | null => {
+          for (const node of nodes) {
+            if (node.path === parentPath) return node
+            const found = findParent(node.children)
+            if (found) return found
+          }
+          return null
+        }
+        parentNode = findParent(hierarchyTree)
+
+        if (children.length > 0) {
+          groups.push({ parentPath, parentNode, children })
+        }
+      })
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-4 pb-3 border-b">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {session.hierarchyDefinitions[currentLevel - 1]?.columnName}別配分
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={expandAll}
+                className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+              >
+                全て展開
+              </button>
+              <button
+                onClick={collapseAll}
+                className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+              >
+                全て折りたたむ
+              </button>
+            </div>
+          </div>
+
+          {groups.map(({ parentPath, parentNode, children }) => {
+            const isExpanded = expandedGroups.has(parentPath)
+            const total = calculateLevelTotal(children)
+            const isValid = Math.abs(total - 100) < 0.01
+
+            return (
+              <div key={parentPath} className="mb-6">
+                {/* Parent row */}
+                <div
+                  className="flex items-center justify-between bg-gray-50 hover:bg-gray-100 p-3 rounded cursor-pointer"
+                  onClick={() => toggleGroup(parentPath)}
+                >
+                  <div className="flex items-center gap-2">
+                    {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                    <span className="font-medium text-gray-900">
+                      {parentPath}
+                      {parentNode && ` (${parentNode.percentage.toFixed(2)}% = ¥${parentNode.amount.toLocaleString()})`}
+                    </span>
+                    <div className={`flex items-center gap-1 text-sm ${isValid ? 'text-green-600' : 'text-red-600'}`}>
+                      {isValid ? <Check size={16} /> : <AlertCircle size={16} />}
+                      <span>{total.toFixed(2)}%</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      equalDistribution(parentPath, currentLevel)
+                    }}
+                    className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                  >
+                    均等配分
+                  </button>
+                </div>
+
+                {/* Children table */}
+                {isExpanded && (
+                  <table className="w-full mt-2">
+                    <thead>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left py-2 px-4 text-gray-900 font-semibold">
+                          {session.hierarchyDefinitions[currentLevel - 1]?.columnName}
+                        </th>
+                        <th className="text-right py-2 px-4 text-gray-900 font-semibold">割合 (%)</th>
+                        <th className="text-right py-2 px-4 text-gray-900 font-semibold">金額 (円)</th>
+                        <th className="text-right py-2 px-4 text-gray-900 font-semibold">数量</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {children.map((node) => (
+                        <tr key={node.path} className="border-b hover:bg-gray-50">
+                          <td className="py-2 px-4 text-gray-900 pl-8">{node.name}</td>
+                          <td className="text-right py-2 px-4">
+                            <input
+                              type="number"
+                              className="w-24 px-2 py-1 border rounded text-right text-gray-900 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={node.percentage}
+                              onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
+                              min="0"
+                              max="100"
+                              step="0.01"
+                            />
+                          </td>
+                          <td className="text-right py-2 px-4 text-gray-900">
+                            ¥{node.amount.toLocaleString()}
+                          </td>
+                          <td className="text-right py-2 px-4 text-gray-900">
+                            {node.quantity.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Subtotal row */}
+                      <tr className="bg-gray-100 font-medium">
+                        <td className="py-2 px-4 text-gray-900 pl-8">小計</td>
+                        <td className={`text-right py-2 px-4 ${isValid ? 'text-green-600' : 'text-red-600'}`}>
+                          {total.toFixed(2)}%
+                        </td>
+                        <td className="text-right py-2 px-4 text-gray-900">
+                          ¥{children.reduce((sum, n) => sum + n.amount, 0).toLocaleString()}
+                        </td>
+                        <td className="text-right py-2 px-4 text-gray-900">
+                          {children.reduce((sum, n) => sum + n.quantity, 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+  }
 }
 
 function renderHierarchyNodes(
