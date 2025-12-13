@@ -122,7 +122,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex justify-between items-center">
-          <h1 className="text-3xl font-bold">ダッシュボード</h1>
+          <h1 className="text-3xl font-bold text-gray-900">ダッシュボード</h1>
           <button
             onClick={() => router.push('/api/auth/signout')}
             className="btn btn-secondary"
@@ -135,7 +135,7 @@ export default function DashboardPage() {
       <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-semibold">カテゴリ</h2>
+            <h2 className="text-2xl font-semibold text-gray-900">カテゴリ</h2>
             <button
               onClick={() => setShowCategoryModal(true)}
               className="btn btn-primary flex items-center gap-2"
@@ -162,7 +162,7 @@ export default function DashboardPage() {
 
         <div>
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-semibold">セッション</h2>
+            <h2 className="text-2xl font-semibold text-gray-900">セッション</h2>
             <button
               onClick={() => setShowSessionModal(true)}
               className="btn btn-primary flex items-center gap-2"
@@ -213,9 +213,9 @@ export default function DashboardPage() {
 
       {/* Category Modal */}
       {showCategoryModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">カテゴリ作成</h2>
+            <h2 className="text-xl font-bold mb-4 text-gray-900">カテゴリ作成</h2>
             <div className="mb-4">
               <label className="label">カテゴリ名</label>
               <input
@@ -246,9 +246,9 @@ export default function DashboardPage() {
 
       {/* Session Modal */}
       {showSessionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">セッション作成</h2>
+            <h2 className="text-xl font-bold mb-4 text-gray-900">セッション作成</h2>
             <div className="mb-4">
               <label className="label">カテゴリ</label>
               <select

@@ -55,6 +55,8 @@ export default function SessionPage() {
   const [hierarchyTree, setHierarchyTree] = useState<HierarchyNode[]>([])
   const [loading, setLoading] = useState(true)
   const [showUploadModal, setShowUploadModal] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -93,15 +95,27 @@ export default function SessionPage() {
     }
   }
 
-  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (file) {
+      setSelectedFile(file)
+    }
+  }
 
-    Papa.parse(file, {
+  const handleCSVUpload = async () => {
+    if (!selectedFile) return
+
+    setUploading(true)
+
+    Papa.parse(selectedFile, {
       header: true,
       complete: async (results) => {
         const data = results.data as any[]
-        if (data.length === 0) return
+        if (data.length === 0) {
+          alert('CSVファイルが空です')
+          setUploading(false)
+          return
+        }
 
         // Extract hierarchy columns (all columns except sku_code and unitprice)
         const allColumns = Object.keys(data[0])
@@ -136,10 +150,17 @@ export default function SessionPage() {
 
           if (response.ok) {
             setShowUploadModal(false)
+            setSelectedFile(null)
             loadData()
+            alert('CSVを正常にアップロードしました')
+          } else {
+            alert('アップロードに失敗しました')
           }
         } catch (error) {
           console.error('Error uploading CSV:', error)
+          alert('アップロード中にエラーが発生しました')
+        } finally {
+          setUploading(false)
         }
       }
     })
@@ -301,8 +322,8 @@ export default function SessionPage() {
                 <ArrowLeft size={20} />
               </button>
               <div>
-                <h1 className="text-3xl font-bold">{session.name}</h1>
-                <p className="text-gray-600">
+                <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
+                <p className="text-gray-700">
                   総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
                 </p>
               </div>
@@ -338,10 +359,10 @@ export default function SessionPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left py-2 px-4">階層</th>
-                  <th className="text-right py-2 px-4">割合 (%)</th>
-                  <th className="text-right py-2 px-4">金額 (円)</th>
-                  <th className="text-right py-2 px-4">数量</th>
+                  <th className="text-left py-2 px-4 text-gray-900 font-semibold">階層</th>
+                  <th className="text-right py-2 px-4 text-gray-900 font-semibold">割合 (%)</th>
+                  <th className="text-right py-2 px-4 text-gray-900 font-semibold">金額 (円)</th>
+                  <th className="text-right py-2 px-4 text-gray-900 font-semibold">数量</th>
                 </tr>
               </thead>
               <tbody>
@@ -354,28 +375,47 @@ export default function SessionPage() {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">CSV取り込み</h2>
+            <h2 className="text-xl font-bold mb-4 text-gray-900">CSV取り込み</h2>
             <div className="mb-4">
-              <label className="label">CSVファイル</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">CSVファイル</label>
               <input
                 type="file"
                 accept=".csv"
-                onChange={handleCSVUpload}
-                className="w-full"
+                onChange={handleFileSelect}
+                className="w-full text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                disabled={uploading}
               />
-              <p className="text-sm text-gray-600 mt-2">
+              {selectedFile && (
+                <p className="text-sm text-green-600 mt-2">
+                  選択済み: {selectedFile.name}
+                </p>
+              )}
+              <p className="text-sm text-gray-700 mt-2">
                 必須カラム: sku_code, unitprice<br />
                 その他のカラムは自動的に階層として認識されます
               </p>
             </div>
-            <button
-              onClick={() => setShowUploadModal(false)}
-              className="btn btn-secondary w-full"
-            >
-              キャンセル
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCSVUpload}
+                className="btn btn-primary flex-1"
+                disabled={!selectedFile || uploading}
+              >
+                {uploading ? 'アップロード中...' : 'アップロード'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowUploadModal(false)
+                  setSelectedFile(null)
+                }}
+                className="btn btn-secondary flex-1"
+                disabled={uploading}
+              >
+                キャンセル
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -391,13 +431,13 @@ function renderHierarchyNodes(
   return nodes.map((node) => (
     <React.Fragment key={node.path}>
       <tr className="border-b hover:bg-gray-50">
-        <td className="py-2 px-4" style={{ paddingLeft: `${depth * 20 + 16}px` }}>
+        <td className="py-2 px-4 text-gray-900" style={{ paddingLeft: `${depth * 20 + 16}px` }}>
           {node.name}
         </td>
         <td className="text-right py-2 px-4">
           <input
             type="number"
-            className="w-24 px-2 py-1 border rounded text-right"
+            className="w-24 px-2 py-1 border rounded text-right text-gray-900 border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={node.percentage}
             onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
             min="0"
@@ -405,10 +445,10 @@ function renderHierarchyNodes(
             step="0.01"
           />
         </td>
-        <td className="text-right py-2 px-4">
+        <td className="text-right py-2 px-4 text-gray-900">
           ¥{node.amount.toLocaleString()}
         </td>
-        <td className="text-right py-2 px-4">
+        <td className="text-right py-2 px-4 text-gray-900">
           {node.quantity}
         </td>
       </tr>
