@@ -3,8 +3,24 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Upload, Download, Save, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
+import { ArrowLeft, Upload, Save, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
 import Papa from 'papaparse'
+
+// カテゴリ別SQL定義
+const CATEGORY_SQL_MAP: Record<string, string> = {
+  'SLEEP寝具': `SELECT
+  category,
+  raw_materials,
+  launch_year,
+  item_name,
+  size,
+  color,
+  sku_code,
+  unitprice
+FROM your_table
+WHERE category = 'SLEEP寝具'
+ORDER BY category, raw_materials, launch_year, item_name;`
+}
 
 interface Session {
   id: string
@@ -68,6 +84,8 @@ export default function SessionPage() {
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState(false)
   const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [showSqlModal, setShowSqlModal] = useState(false)
+  const [categorySql, setCategorySql] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -191,20 +209,6 @@ export default function SessionPage() {
         }
       }
     })
-  }
-
-  const handleExport = async () => {
-    try {
-      const response = await fetch(`/api/sessions/${params.sessionId}/export`)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `budget-allocation-${params.sessionId}.csv`
-      a.click()
-    } catch (error) {
-      console.error('Error exporting:', error)
-    }
   }
 
   const updateAllocation = (path: string, percentage: number) => {
@@ -344,6 +348,30 @@ export default function SessionPage() {
     } catch (error) {
       console.error('Error deleting category:', error)
       alert('カテゴリの削除に失敗しました')
+    }
+  }
+
+  const showSql = () => {
+    if (!category) return
+
+    // カテゴリ名でSQLを検索（完全一致）
+    const sql = CATEGORY_SQL_MAP[category.name] || ''
+
+    if (sql) {
+      setCategorySql(sql)
+      setShowSqlModal(true)
+    } else {
+      alert('このカテゴリ用のSQLは登録されていません')
+    }
+  }
+
+  const copySqlToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(categorySql)
+      alert('SQLをクリップボードにコピーしました')
+    } catch (error) {
+      console.error('Error copying to clipboard:', error)
+      alert('コピーに失敗しました')
     }
   }
 
@@ -714,14 +742,17 @@ export default function SessionPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
-                <Upload size={20} />
-                CSV取り込み
-              </button>
-              <button onClick={handleExport} className="btn btn-secondary flex items-center gap-2">
-                <Download size={20} />
-                エクスポート
-              </button>
+              {CATEGORY_SQL_MAP[category?.name || ''] && (
+                <button onClick={showSql} className="btn btn-secondary">
+                  SQL
+                </button>
+              )}
+              {skuData.length === 0 && (
+                <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
+                  <Upload size={20} />
+                  CSV取り込み
+                </button>
+              )}
               <button onClick={saveAllocations} className="btn btn-primary flex items-center gap-2">
                 <Save size={20} />
                 保存
@@ -954,6 +985,36 @@ export default function SessionPage() {
                 className="btn btn-secondary flex-1"
               >
                 キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SQL Modal */}
+      {showSqlModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-3xl">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">
+              {category?.name} - SQL
+            </h2>
+            <div className="mb-4">
+              <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto text-sm text-gray-900 border border-gray-300">
+                {categorySql}
+              </pre>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={copySqlToClipboard}
+                className="btn btn-primary flex-1"
+              >
+                コピー
+              </button>
+              <button
+                onClick={() => setShowSqlModal(false)}
+                className="btn btn-secondary flex-1"
+              >
+                閉じる
               </button>
             </div>
           </div>

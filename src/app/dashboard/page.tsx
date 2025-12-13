@@ -35,6 +35,8 @@ export default function DashboardPage() {
     name: '',
     totalBudget: ''
   })
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -173,38 +175,102 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <div className="space-y-4">
-            {sessions.map((session) => (
-              <Link
-                key={session.id}
-                href={`/dashboard/${session.category.id}/${session.id}`}
-                className="block card hover:shadow-lg transition-shadow"
+          {/* Category Filter and Session Search */}
+          <div className="mb-6 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setSelectedCategoryId('')}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  selectedCategoryId === ''
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <FileText className="text-green-600" />
-                    <div>
-                      <h3 className="text-lg font-semibold">{session.name}</h3>
-                      <p className="text-sm text-gray-600">
-                        {session.category.name} - 予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-sm ${
-                    session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                    session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {session.status === 'confirmed' ? '確定' :
-                     session.status === 'archived' ? 'アーカイブ' : '作業中'}
-                  </span>
-                </div>
-              </Link>
-            ))}
+                すべてのカテゴリ
+              </button>
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => setSelectedCategoryId(category.id)}
+                  className={`px-4 py-2 rounded-md transition-colors ${
+                    selectedCategoryId === category.id
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
 
-            {sessions.length === 0 && (
+            <div>
+              <input
+                type="text"
+                className="input w-full max-w-md"
+                placeholder="セッション名で検索..."
+                value={sessionSearchQuery}
+                onChange={(e) => setSessionSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {sessions
+              .filter(session => {
+                // Category filter
+                if (selectedCategoryId && session.category.id !== selectedCategoryId) {
+                  return false
+                }
+                // Search filter
+                if (sessionSearchQuery && !session.name.toLowerCase().includes(sessionSearchQuery.toLowerCase())) {
+                  return false
+                }
+                return true
+              })
+              .map((session) => (
+                <Link
+                  key={session.id}
+                  href={`/dashboard/${session.category.id}/${session.id}`}
+                  className="block card hover:shadow-lg transition-shadow"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <FileText className="text-green-600" />
+                      <div>
+                        <h3 className="text-lg font-semibold">{session.name}</h3>
+                        <p className="text-sm text-gray-600">
+                          {session.category.name} - 予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          作成日: {new Date(session.createdAt).toLocaleDateString('ja-JP', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-sm ${
+                      session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                      session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {session.status === 'confirmed' ? '確定' :
+                       session.status === 'archived' ? 'アーカイブ' : '作業中'}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+
+            {sessions.filter(session => {
+              if (selectedCategoryId && session.category.id !== selectedCategoryId) return false
+              if (sessionSearchQuery && !session.name.toLowerCase().includes(sessionSearchQuery.toLowerCase())) return false
+              return true
+            }).length === 0 && (
               <div className="text-center py-12 text-gray-500">
-                セッションがありません。新しいセッションを作成してください。
+                {sessionSearchQuery || selectedCategoryId
+                  ? '条件に一致するセッションがありません。'
+                  : 'セッションがありません。新しいセッションを作成してください。'}
               </div>
             )}
           </div>
