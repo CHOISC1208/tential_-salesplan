@@ -8,6 +8,46 @@ const categorySchema = z.object({
   name: z.string().min(1).max(100)
 })
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { id } = await params
+
+    const category = await prisma.category.findFirst({
+      where: {
+        id,
+        userId: session.user.id
+      }
+    })
+
+    if (!category) {
+      return NextResponse.json(
+        { error: 'Category not found' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(category)
+  } catch (error) {
+    console.error('Error fetching category:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

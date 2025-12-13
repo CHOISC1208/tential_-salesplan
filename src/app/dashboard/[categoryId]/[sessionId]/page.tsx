@@ -62,6 +62,7 @@ export default function SessionPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [category, setCategory] = useState<{ id: string; name: string } | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -829,26 +830,27 @@ export default function SessionPage() {
 
             // 親パスを階層ごとに分割
             const pathParts = parentPath.split('/')
-            const displayName = pathParts[pathParts.length - 1] // 最後の階層のみ表示
+            // 最後の3階層を表示（ない場合はあるだけ）
+            const displayParts = pathParts.slice(-3)
+            const displayName = displayParts.join(' - ')
 
             // ツールチップ用の階層詳細
-            const tooltipContent = pathParts.map((part, index) =>
+            const tooltipLines = pathParts.map((part, index) =>
               `階層${index + 1}: ${part}`
-            ).join('\n')
+            )
 
             return (
               <div key={parentPath} className="mb-6">
                 {/* Parent row */}
                 <div
-                  className="flex items-center justify-between bg-gray-50 hover:bg-gray-100 p-3 rounded cursor-pointer"
+                  className="flex items-center justify-between bg-gray-50 hover:bg-gray-100 p-3 rounded cursor-pointer relative"
                   onClick={() => toggleGroup(parentPath)}
+                  onMouseEnter={() => setHoveredPath(parentPath)}
+                  onMouseLeave={() => setHoveredPath(null)}
                 >
                   <div className="flex items-center gap-2">
                     {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                    <span
-                      className="font-medium text-gray-900"
-                      title={tooltipContent}
-                    >
+                    <span className="font-medium text-gray-900">
                       {displayName}
                       {parentNode && ` (${parentNode.percentage.toFixed(2)}% = ¥${parentNode.amount.toLocaleString()})`}
                     </span>
@@ -866,6 +868,15 @@ export default function SessionPage() {
                   >
                     均等配分
                   </button>
+
+                  {/* Custom tooltip */}
+                  {hoveredPath === parentPath && (
+                    <div className="absolute left-0 top-full mt-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg p-3 z-50 min-w-[300px]">
+                      {tooltipLines.map((line, index) => (
+                        <div key={index} className="py-1">{line}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Children table */}
