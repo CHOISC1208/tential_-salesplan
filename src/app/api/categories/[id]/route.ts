@@ -10,7 +10,7 @@ const categorySchema = z.object({
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -22,13 +22,14 @@ export async function PUT(
       )
     }
 
+    const { id } = await params
     const body = await request.json()
     const { name } = categorySchema.parse(body)
 
     // Check if category belongs to user
     const existingCategory = await prisma.category.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: session.user.id
       }
     })
@@ -41,7 +42,7 @@ export async function PUT(
     }
 
     const category = await prisma.category.update({
-      where: { id: params.id },
+      where: { id },
       data: { name }
     })
 
@@ -64,7 +65,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -76,10 +77,12 @@ export async function DELETE(
       )
     }
 
+    const { id } = await params
+
     // Check if category belongs to user
     const existingCategory = await prisma.category.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: session.user.id
       }
     })
@@ -92,7 +95,7 @@ export async function DELETE(
     }
 
     await prisma.category.delete({
-      where: { id: params.id }
+      where: { id }
     })
 
     return NextResponse.json({ success: true })

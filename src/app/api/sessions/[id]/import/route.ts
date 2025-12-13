@@ -17,7 +17,7 @@ const importSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -29,10 +29,12 @@ export async function POST(
       )
     }
 
+    const { id } = await params
+
     // Verify session belongs to user
     const budgetSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: session.user.id
         }
@@ -51,14 +53,14 @@ export async function POST(
 
     // Delete existing data
     await prisma.$transaction([
-      prisma.allocation.deleteMany({ where: { sessionId: params.id } }),
-      prisma.skuData.deleteMany({ where: { sessionId: params.id } }),
-      prisma.hierarchyDefinition.deleteMany({ where: { sessionId: params.id } })
+      prisma.allocation.deleteMany({ where: { sessionId: id } }),
+      prisma.skuData.deleteMany({ where: { sessionId: id } }),
+      prisma.hierarchyDefinition.deleteMany({ where: { sessionId: id } })
     ])
 
     // Create hierarchy definitions
     const hierarchyDefinitions = hierarchyColumns.map((col, index) => ({
-      sessionId: params.id,
+      sessionId: id,
       level: index + 1,
       columnName: col,
       displayOrder: index + 1
@@ -70,7 +72,7 @@ export async function POST(
 
     // Create SKU data
     const skuRecords = skuData.map(sku => ({
-      sessionId: params.id,
+      sessionId: id,
       skuCode: sku.skuCode,
       unitPrice: sku.unitPrice,
       hierarchyValues: sku.hierarchyValues

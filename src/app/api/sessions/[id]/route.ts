@@ -12,7 +12,7 @@ const updateSessionSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -24,9 +24,11 @@ export async function GET(
       )
     }
 
+    const { id } = await params
+
     const budgetSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: session.user.id
         }
@@ -61,7 +63,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authSession = await getServerSession(authOptions)
@@ -73,13 +75,14 @@ export async function PUT(
       )
     }
 
+    const { id } = await params
     const body = await request.json()
     const data = updateSessionSchema.parse(body)
 
     // Verify session belongs to user
     const existingSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: authSession.user.id
         }
@@ -99,7 +102,7 @@ export async function PUT(
     if (data.totalBudget) updateData.totalBudget = BigInt(data.totalBudget)
 
     const updatedSession = await prisma.session.update({
-      where: { id: params.id },
+      where: { id },
       data: updateData
     })
 
@@ -125,7 +128,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -137,10 +140,12 @@ export async function DELETE(
       )
     }
 
+    const { id } = await params
+
     // Verify session belongs to user
     const existingSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: session.user.id
         }
@@ -155,7 +160,7 @@ export async function DELETE(
     }
 
     await prisma.session.delete({
-      where: { id: params.id }
+      where: { id }
     })
 
     return NextResponse.json({ success: true })

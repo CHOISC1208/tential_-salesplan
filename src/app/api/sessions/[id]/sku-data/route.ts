@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -17,10 +17,12 @@ export async function GET(
       )
     }
 
+    const { id } = await params
+
     // Verify session belongs to user
     const budgetSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: session.user.id
         }
@@ -35,7 +37,7 @@ export async function GET(
     }
 
     const skuData = await prisma.skuData.findMany({
-      where: { sessionId: params.id },
+      where: { sessionId: id },
       orderBy: { createdAt: 'asc' }
     })
 

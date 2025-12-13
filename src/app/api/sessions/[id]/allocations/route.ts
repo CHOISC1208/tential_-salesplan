@@ -18,7 +18,7 @@ const allocationsUpdateSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -30,10 +30,12 @@ export async function GET(
       )
     }
 
+    const { id } = await params
+
     // Verify session belongs to user
     const budgetSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: session.user.id
         }
@@ -48,7 +50,7 @@ export async function GET(
     }
 
     const allocations = await prisma.allocation.findMany({
-      where: { sessionId: params.id },
+      where: { sessionId: id },
       orderBy: [{ level: 'asc' }, { hierarchyPath: 'asc' }]
     })
 
@@ -70,7 +72,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -82,10 +84,12 @@ export async function PUT(
       )
     }
 
+    const { id } = await params
+
     // Verify session belongs to user
     const budgetSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: session.user.id
         }
@@ -104,11 +108,11 @@ export async function PUT(
 
     // Delete existing allocations and create new ones
     await prisma.allocation.deleteMany({
-      where: { sessionId: params.id }
+      where: { sessionId: id }
     })
 
     const allocationRecords = allocations.map(a => ({
-      sessionId: params.id,
+      sessionId: id,
       hierarchyPath: a.hierarchyPath,
       level: a.level,
       percentage: a.percentage,
