@@ -6,47 +6,6 @@ import { useSession } from 'next-auth/react'
 import { ArrowLeft, Upload, Save, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
 import Papa from 'papaparse'
 
-// カテゴリ別SQL定義
-const CATEGORY_SQL_MAP: Record<string, string> = {
-  'SLEEP寝具': `SELECT
-  category,
-  raw_materials,
-  launch_year,
-  item_name,
-  size,
-  color,
-  sku_code,
-  unitprice
-FROM your_table
-WHERE category = 'SLEEP寝具'
-ORDER BY category, raw_materials, launch_year, item_name;`,
-
-  'アパレル': `SELECT
-  category,
-  brand,
-  season,
-  product_type,
-  size,
-  color,
-  sku_code,
-  unitprice
-FROM your_table
-WHERE category = 'アパレル'
-ORDER BY brand, season, product_type;`,
-
-  '家電': `SELECT
-  category,
-  manufacturer,
-  product_line,
-  model_name,
-  spec,
-  sku_code,
-  unitprice
-FROM your_table
-WHERE category = '家電'
-ORDER BY manufacturer, product_line, model_name;`
-}
-
 interface Session {
   id: string
   name: string
@@ -376,17 +335,25 @@ export default function SessionPage() {
     }
   }
 
-  const showSql = () => {
+  const showSql = async () => {
     if (!category) return
 
-    // カテゴリ名でSQLを検索（完全一致）
-    const sql = CATEGORY_SQL_MAP[category.name] || ''
+    try {
+      // カテゴリ名と同じファイル名のSQLファイルを読み込む
+      // 例: public/sql/SLEEP寝具.sql
+      const response = await fetch(`/sql/${category.name}.sql`)
 
-    if (sql) {
+      if (!response.ok) {
+        alert(`このカテゴリ用のSQLファイルが見つかりません。\n場所: public/sql/${category.name}.sql`)
+        return
+      }
+
+      const sql = await response.text()
       setCategorySql(sql)
       setShowSqlModal(true)
-    } else {
-      alert('このカテゴリ用のSQLは登録されていません')
+    } catch (error) {
+      console.error('Error loading SQL:', error)
+      alert(`SQLファイルの読み込みに失敗しました。\n場所: public/sql/${category.name}.sql`)
     }
   }
 
@@ -767,11 +734,9 @@ export default function SessionPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              {CATEGORY_SQL_MAP[category?.name || ''] && (
-                <button onClick={showSql} className="btn btn-secondary">
-                  SQL
-                </button>
-              )}
+              <button onClick={showSql} className="btn btn-secondary">
+                SQL
+              </button>
               {skuData.length === 0 && (
                 <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
                   <Upload size={20} />
