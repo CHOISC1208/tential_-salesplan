@@ -19,7 +19,32 @@ const CATEGORY_SQL_MAP: Record<string, string> = {
   unitprice
 FROM your_table
 WHERE category = 'SLEEP寝具'
-ORDER BY category, raw_materials, launch_year, item_name;`
+ORDER BY category, raw_materials, launch_year, item_name;`,
+
+  'アパレル': `SELECT
+  category,
+  brand,
+  season,
+  product_type,
+  size,
+  color,
+  sku_code,
+  unitprice
+FROM your_table
+WHERE category = 'アパレル'
+ORDER BY brand, season, product_type;`,
+
+  '家電': `SELECT
+  category,
+  manufacturer,
+  product_line,
+  model_name,
+  spec,
+  sku_code,
+  unitprice
+FROM your_table
+WHERE category = '家電'
+ORDER BY manufacturer, product_line, model_name;`
 }
 
 interface Session {

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
-import { Plus, FolderOpen, FileText } from 'lucide-react'
+import { Plus, FolderOpen, FileText, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface Category {
   id: string
@@ -35,7 +35,7 @@ export default function DashboardPage() {
     name: '',
     totalBudget: ''
   })
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
 
   useEffect(() => {
@@ -135,142 +135,133 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-semibold text-gray-900">カテゴリ</h2>
-            <button
-              onClick={() => setShowCategoryModal(true)}
-              className="btn btn-primary flex items-center gap-2"
-            >
-              <Plus size={20} />
-              カテゴリ作成
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {categories.map((category) => (
-              <div key={category.id} className="card">
-                <div className="flex items-center gap-2 mb-2">
-                  <FolderOpen className="text-blue-600" />
-                  <h3 className="text-lg font-semibold">{category.name}</h3>
-                </div>
-                <p className="text-sm text-gray-600">
-                  {sessions.filter(s => s.category.id === category.id).length} セッション
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-2xl font-semibold text-gray-900">セッション</h2>
-            <button
-              onClick={() => setShowSessionModal(true)}
-              className="btn btn-primary flex items-center gap-2"
-              disabled={categories.length === 0}
-            >
-              <Plus size={20} />
-              セッション作成
-            </button>
-          </div>
-
-          {/* Category Filter and Session Search */}
-          <div className="mb-6 space-y-3">
-            <div className="flex flex-wrap gap-2">
+            <h2 className="text-2xl font-semibold text-gray-900">カテゴリとセッション</h2>
+            <div className="flex gap-2">
               <button
-                onClick={() => setSelectedCategoryId('')}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  selectedCategoryId === ''
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
+                onClick={() => setShowCategoryModal(true)}
+                className="btn btn-primary flex items-center gap-2"
               >
-                すべてのカテゴリ
+                <Plus size={20} />
+                カテゴリ作成
               </button>
-              {categories.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => setSelectedCategoryId(category.id)}
-                  className={`px-4 py-2 rounded-md transition-colors ${
-                    selectedCategoryId === category.id
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  {category.name}
-                </button>
-              ))}
-            </div>
-
-            <div>
-              <input
-                type="text"
-                className="input w-full max-w-md"
-                placeholder="セッション名で検索..."
-                value={sessionSearchQuery}
-                onChange={(e) => setSessionSearchQuery(e.target.value)}
-              />
+              <button
+                onClick={() => setShowSessionModal(true)}
+                className="btn btn-primary flex items-center gap-2"
+                disabled={categories.length === 0}
+              >
+                <Plus size={20} />
+                セッション作成
+              </button>
             </div>
           </div>
 
+          {/* Search */}
+          <div className="mb-4">
+            <input
+              type="text"
+              className="input w-full max-w-md"
+              placeholder="セッション名で検索..."
+              value={sessionSearchQuery}
+              onChange={(e) => setSessionSearchQuery(e.target.value)}
+            />
+          </div>
+
+          {/* Categories with Sessions */}
           <div className="space-y-4">
-            {sessions
-              .filter(session => {
-                // Category filter
-                if (selectedCategoryId && session.category.id !== selectedCategoryId) {
-                  return false
+            {categories.map((category) => {
+              const isExpanded = expandedCategories.has(category.id)
+              const categorySessions = sessions.filter(s => s.category.id === category.id)
+              const filteredSessions = sessionSearchQuery
+                ? categorySessions.filter(s => s.name.toLowerCase().includes(sessionSearchQuery.toLowerCase()))
+                : categorySessions
+
+              const toggleCategory = () => {
+                const newExpanded = new Set(expandedCategories)
+                if (newExpanded.has(category.id)) {
+                  newExpanded.delete(category.id)
+                } else {
+                  newExpanded.add(category.id)
                 }
-                // Search filter
-                if (sessionSearchQuery && !session.name.toLowerCase().includes(sessionSearchQuery.toLowerCase())) {
-                  return false
-                }
-                return true
-              })
-              .map((session) => (
-                <Link
-                  key={session.id}
-                  href={`/dashboard/${session.category.id}/${session.id}`}
-                  className="block card hover:shadow-lg transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
+                setExpandedCategories(newExpanded)
+              }
+
+              return (
+                <div key={category.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                  {/* Category Header */}
+                  <div
+                    onClick={toggleCategory}
+                    className="card cursor-pointer hover:bg-gray-50 transition-colors flex items-center justify-between"
+                  >
                     <div className="flex items-center gap-3">
-                      <FileText className="text-green-600" />
+                      {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                      <FolderOpen className="text-blue-600" />
                       <div>
-                        <h3 className="text-lg font-semibold">{session.name}</h3>
+                        <h3 className="text-lg font-semibold">{category.name}</h3>
                         <p className="text-sm text-gray-600">
-                          {session.category.name} - 予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          作成日: {new Date(session.createdAt).toLocaleDateString('ja-JP', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit'
-                          })}
+                          {categorySessions.length} セッション
                         </p>
                       </div>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-sm ${
-                      session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                      session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {session.status === 'confirmed' ? '確定' :
-                       session.status === 'archived' ? 'アーカイブ' : '作業中'}
-                    </span>
                   </div>
-                </Link>
-              ))}
 
-            {sessions.filter(session => {
-              if (selectedCategoryId && session.category.id !== selectedCategoryId) return false
-              if (sessionSearchQuery && !session.name.toLowerCase().includes(sessionSearchQuery.toLowerCase())) return false
-              return true
-            }).length === 0 && (
+                  {/* Sessions List */}
+                  {isExpanded && (
+                    <div className="bg-gray-50 border-t border-gray-200">
+                      {filteredSessions.length > 0 ? (
+                        <div className="p-4 space-y-3">
+                          {filteredSessions.map((session) => (
+                            <Link
+                              key={session.id}
+                              href={`/dashboard/${session.category.id}/${session.id}`}
+                              className="block bg-white p-4 rounded-lg hover:shadow-md transition-shadow"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <FileText className="text-green-600" size={20} />
+                                  <div>
+                                    <h4 className="font-semibold text-gray-900">{session.name}</h4>
+                                    <p className="text-sm text-gray-600">
+                                      予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                      作成日: {new Date(session.createdAt).toLocaleDateString('ja-JP', {
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit'
+                                      })}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className={`px-3 py-1 rounded-full text-sm ${
+                                  session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                  session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {session.status === 'confirmed' ? '確定' :
+                                   session.status === 'archived' ? 'アーカイブ' : '作業中'}
+                                </span>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center text-gray-500">
+                          {sessionSearchQuery
+                            ? '検索条件に一致するセッションがありません'
+                            : 'このカテゴリにはまだセッションがありません'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {categories.length === 0 && (
               <div className="text-center py-12 text-gray-500">
-                {sessionSearchQuery || selectedCategoryId
-                  ? '条件に一致するセッションがありません。'
-                  : 'セッションがありません。新しいセッションを作成してください。'}
+                カテゴリがありません。新しいカテゴリを作成してください。
               </div>
             )}
           </div>
