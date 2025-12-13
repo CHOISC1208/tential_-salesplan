@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { ArrowLeft, Upload, Download, Save } from 'lucide-react'
@@ -439,7 +439,7 @@ function renderHierarchyNodes(
   depth = 0
 ): React.ReactNode {
   return nodes.map((node) => (
-    <React.Fragment key={node.path}>
+    <Fragment key={node.path}>
       <tr className="border-b hover:bg-gray-50">
         <td className="py-2 px-4 text-gray-900" style={{ paddingLeft: `${depth * 20 + 16}px` }}>
           {node.name}
@@ -463,6 +463,6 @@ function renderHierarchyNodes(
         </td>
       </tr>
       {node.children.length > 0 && renderHierarchyNodes(node.children, updateAllocation, depth + 1)}
-    </React.Fragment>
+    </Fragment>
   ))
 }
