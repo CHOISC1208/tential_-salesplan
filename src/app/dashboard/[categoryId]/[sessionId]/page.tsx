@@ -109,6 +109,8 @@ export default function SessionPage() {
 
     Papa.parse(selectedFile, {
       header: true,
+      dynamicTyping: false, // すべてのフィールドを文字列として読み込み、科学的表記法を防ぐ
+      skipEmptyLines: true,
       complete: async (results) => {
         const data = results.data as any[]
         if (data.length === 0) {
@@ -130,13 +132,13 @@ export default function SessionPage() {
             const hierarchyValues: Record<string, string> = {}
             hierarchyColumns.forEach(col => {
               if (row[col]) {
-                hierarchyValues[col] = row[col]
+                hierarchyValues[col] = String(row[col]).trim()
               }
             })
 
             return {
-              skuCode: row.sku_code,
-              unitPrice: parseInt(row.unitprice),
+              skuCode: String(row.sku_code).trim(), // 明示的に文字列に変換
+              unitPrice: parseInt(String(row.unitprice)), // 文字列から数値に変換
               hierarchyValues
             }
           })
