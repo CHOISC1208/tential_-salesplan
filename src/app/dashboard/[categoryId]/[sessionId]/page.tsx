@@ -3,7 +3,7 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Upload, Save, ChevronDown, ChevronRight, AlertCircle, Check } from 'lucide-react'
+import { ArrowLeft, Upload, Save, ChevronDown, ChevronRight, AlertCircle, Check, Download } from 'lucide-react'
 import Papa from 'papaparse'
 
 interface Session {
@@ -239,10 +239,20 @@ export default function SessionPage() {
 
       // 金額が変わった場合、quantityも再計算
       if (newAmount.toString() !== allocation.amount) {
-        const relatedSkus = skuData.filter(sku => {
-          const skuPath = buildHierarchyPath(sku, session!.hierarchyDefinitions, allocation.level)
-          return skuPath === allocation.hierarchyPath
-        })
+        let relatedSkus: SkuData[] = []
+
+        if (allocation.level === session!.hierarchyDefinitions.length + 1) {
+          // SKUレベル: パスの最後の部分がSKUコード
+          const skuCode = allocation.hierarchyPath.split('/').pop()
+          relatedSkus = skuData.filter(sku => sku.skuCode === skuCode)
+        } else {
+          // 通常の階層レベル
+          relatedSkus = skuData.filter(sku => {
+            const skuPath = buildHierarchyPath(sku, session!.hierarchyDefinitions, allocation.level)
+            return skuPath === allocation.hierarchyPath
+          })
+        }
+
         const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
         const quantity = totalUnitPrice > 0 ? Math.floor(newAmount / totalUnitPrice) : 0
 
@@ -265,10 +275,20 @@ export default function SessionPage() {
     const amount = Math.floor(parentAmount * (percentage / 100))
 
     // Find related SKUs
-    const relatedSkus = skuData.filter(sku => {
-      const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, path.split('/').length)
-      return skuPath === path
-    })
+    const pathLevel = path.split('/').length
+    let relatedSkus: SkuData[] = []
+
+    if (pathLevel === session.hierarchyDefinitions.length + 1) {
+      // SKUレベル: パスの最後の部分がSKUコード
+      const skuCode = path.split('/').pop()
+      relatedSkus = skuData.filter(sku => sku.skuCode === skuCode)
+    } else {
+      // 通常の階層レベル
+      relatedSkus = skuData.filter(sku => {
+        const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, pathLevel)
+        return skuPath === path
+      })
+    }
 
     // Calculate quantity (sum of unit prices)
     const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
@@ -428,6 +448,75 @@ export default function SessionPage() {
     }
   }
 
+  const exportToCSV = () => {
+    if (!session || skuData.length === 0) {
+      alert('エクスポートするデータがありません')
+      return
+    }
+
+    // 階層カラム名を取得
+    const hierarchyColumns = session.hierarchyDefinitions.map(def => def.columnName)
+
+    // CSVヘッダーを作成
+    const headers = [...hierarchyColumns, 'sku_code', '振り分け割合(%)', 'unitprice', '割り振り金額', '数量']
+
+    // CSVデータを作成
+    const rows: string[][] = []
+
+    skuData.forEach(sku => {
+      // 各階層の値を取得
+      const hierarchyValues: string[] = []
+      hierarchyColumns.forEach(colName => {
+        hierarchyValues.push(sku.hierarchyValues[colName] || '')
+      })
+
+      // SKUレベルのパスを構築
+      const parentPath = buildHierarchyPath(sku, session.hierarchyDefinitions, session.hierarchyDefinitions.length)
+      const skuPath = parentPath ? `${parentPath}/${sku.skuCode}` : sku.skuCode
+
+      // 配分情報を取得
+      const allocation = allocations.find(a => a.hierarchyPath === skuPath)
+
+      // 行データを作成（未入力は空欄、0は"0"として出力）
+      const row = [
+        ...hierarchyValues,
+        sku.skuCode,
+        allocation && allocation.percentage > 0 ? allocation.percentage.toString() : '',
+        sku.unitPrice.toString(),
+        allocation && allocation.amount ? allocation.amount : '',
+        allocation && allocation.quantity > 0 ? allocation.quantity.toString() : ''
+      ]
+
+      rows.push(row)
+    })
+
+    // CSVテキストを生成
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => {
+        // カンマやダブルクォートを含む場合はエスケープ
+        if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+          return `"${cell.replace(/"/g, '""')}"`
+        }
+        return cell
+      }).join(','))
+    ].join('\n')
+
+    // BOMを追加してExcelで正しく開けるようにする
+    const bom = '\uFEFF'
+    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
+
+    // ダウンロードリンクを作成
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `allocation_${session.name}_${new Date().toISOString().slice(0, 10)}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   const toggleGroup = (path: string) => {
     const newExpanded = new Set(expandedGroups)
     if (newExpanded.has(path)) {
@@ -496,10 +585,21 @@ export default function SessionPage() {
       // 親の配分額を取得（階層1の場合は総予算）
       const parentAmount = getParentAmount(node.path, newAllocations)
       const amount = Math.floor(parentAmount * (percentage / 100))
-      const relatedSkus = skuData.filter(sku => {
-        const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, node.path.split('/').length)
-        return skuPath === node.path
-      })
+
+      // SKUレベルの場合は、パスからSKUコードを抽出
+      let relatedSkus: SkuData[] = []
+      if (level === session.hierarchyDefinitions.length + 1) {
+        // SKUレベル: パスの最後の部分がSKUコード
+        const skuCode = node.path.split('/').pop()
+        relatedSkus = skuData.filter(sku => sku.skuCode === skuCode)
+      } else {
+        // 通常の階層レベル
+        relatedSkus = skuData.filter(sku => {
+          const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, node.path.split('/').length)
+          return skuPath === node.path
+        })
+      }
+
       const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
       const quantity = totalUnitPrice > 0 ? Math.floor(amount / totalUnitPrice) : 0
 
@@ -617,8 +717,9 @@ export default function SessionPage() {
     const tree: HierarchyNode[] = []
     const nodeMap = new Map<string, HierarchyNode>()
 
-    // Build tree structure
+    // Build tree structure (including SKU level)
     for (const sku of skuData) {
+      // Build hierarchy levels
       for (let level = 1; level <= session.hierarchyDefinitions.length; level++) {
         const path = buildHierarchyPath(sku, session.hierarchyDefinitions, level)
         if (!path) continue
@@ -651,6 +752,33 @@ export default function SessionPage() {
           }
         }
       }
+
+      // Add SKU level (final level)
+      const parentPath = buildHierarchyPath(sku, session.hierarchyDefinitions, session.hierarchyDefinitions.length)
+      const skuPath = parentPath ? `${parentPath}/${sku.skuCode}` : sku.skuCode
+      const skuLevel = session.hierarchyDefinitions.length + 1
+
+      if (!nodeMap.has(skuPath)) {
+        const allocation = allocations.find(a => a.hierarchyPath === skuPath)
+
+        const skuNode: HierarchyNode = {
+          path: skuPath,
+          name: sku.skuCode,
+          level: skuLevel,
+          percentage: allocation?.percentage || 0,
+          amount: allocation ? parseInt(allocation.amount) : 0,
+          unitPrice: sku.unitPrice,
+          quantity: allocation?.quantity || 0,
+          children: []
+        }
+
+        nodeMap.set(skuPath, skuNode)
+
+        const parent = nodeMap.get(parentPath)
+        if (parent) {
+          parent.children.push(skuNode)
+        }
+      }
     }
 
     return tree
@@ -676,8 +804,8 @@ export default function SessionPage() {
     const newAllocations = [...allocations]
     let hasChanges = false
 
-    // 各レベルをチェック
-    for (let level = 2; level <= session.hierarchyDefinitions.length; level++) {
+    // 各レベルをチェック (SKUレベルまで含む)
+    for (let level = 2; level <= session.hierarchyDefinitions.length + 1; level++) {
       const parentPaths = new Set<string>()
       const nodesAtLevel = getNodesByLevel(level)
 
@@ -698,10 +826,21 @@ export default function SessionPage() {
             // 親の配分額を取得（階層1の場合は総予算）
             const parentAmount = getParentAmount(child.path, newAllocations)
             const amount = Math.floor(parentAmount * 1) // 100%
-            const relatedSkus = skuData.filter(sku => {
-              const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, child.path.split('/').length)
-              return skuPath === child.path
-            })
+
+            // SKUレベルの場合は、パスからSKUコードを抽出
+            let relatedSkus: SkuData[] = []
+            if (level === session.hierarchyDefinitions.length + 1) {
+              // SKUレベル: パスの最後の部分がSKUコード
+              const skuCode = child.path.split('/').pop()
+              relatedSkus = skuData.filter(sku => sku.skuCode === skuCode)
+            } else {
+              // 通常の階層レベル
+              relatedSkus = skuData.filter(sku => {
+                const skuPath = buildHierarchyPath(sku, session.hierarchyDefinitions, child.path.split('/').length)
+                return skuPath === child.path
+              })
+            }
+
             const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
             const quantity = totalUnitPrice > 0 ? Math.floor(amount / totalUnitPrice) : 0
 
@@ -820,6 +959,12 @@ export default function SessionPage() {
                   CSV取り込み
                 </button>
               )}
+              {skuData.length > 0 && (
+                <button onClick={exportToCSV} className="btn bg-gray-600 text-white hover:bg-gray-700 flex items-center gap-2">
+                  <Download size={20} />
+                  CSV出力
+                </button>
+              )}
               {session.category?.userId === authSession?.user?.id && (
                 <button onClick={saveAllocations} className="btn btn-primary flex items-center gap-2">
                   <Save size={20} />
@@ -897,6 +1042,20 @@ export default function SessionPage() {
                       </button>
                     )
                   })}
+                  {/* SKU Level Button */}
+                  <button
+                    onClick={() => setCurrentLevel(session.hierarchyDefinitions.length + 1)}
+                    className={`min-w-[200px] px-6 py-2 rounded-md font-medium transition-colors ${
+                      currentLevel === session.hierarchyDefinitions.length + 1
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    <div>Level {session.hierarchyDefinitions.length + 1}: sku_code</div>
+                    <div className={`text-xs mt-1 ${currentLevel === session.hierarchyDefinitions.length + 1 ? 'text-blue-100' : 'text-gray-600'}`}>
+                      SKU詳細
+                    </div>
+                  </button>
                 </div>
               </div>
             )}
