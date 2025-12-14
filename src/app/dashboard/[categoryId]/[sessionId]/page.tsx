@@ -474,17 +474,53 @@ export default function SessionPage() {
       const parentPath = buildHierarchyPath(sku, session.hierarchyDefinitions, session.hierarchyDefinitions.length)
       const skuPath = parentPath ? `${parentPath}/${sku.skuCode}` : sku.skuCode
 
-      // 配分情報を取得
-      const allocation = allocations.find(a => a.hierarchyPath === skuPath)
+      // 全階層の割合を掛け算して最終的な割合を計算
+      let finalPercentage: number | null = null
+      let finalAmount: string = ''
+      let finalQuantity: string = ''
+
+      // SKUレベルの配分情報を取得
+      const skuAllocation = allocations.find(a => a.hierarchyPath === skuPath)
+
+      if (skuAllocation && skuAllocation.percentage > 0) {
+        // SKUまでのパスの各階層の割合を取得
+        const pathParts = skuPath.split('/')
+        let cumulativePercentage = 1.0 // 100%から開始
+
+        // 各階層レベルの割合を掛け算
+        for (let level = 1; level <= pathParts.length; level++) {
+          const levelPath = pathParts.slice(0, level).join('/')
+          const levelAllocation = allocations.find(a => a.hierarchyPath === levelPath)
+
+          if (levelAllocation && levelAllocation.percentage > 0) {
+            cumulativePercentage *= (levelAllocation.percentage / 100)
+          } else {
+            // 配分が設定されていない階層がある場合は、最終的な割合も未設定
+            cumulativePercentage = 0
+            break
+          }
+        }
+
+        if (cumulativePercentage > 0) {
+          finalPercentage = cumulativePercentage * 100 // パーセント表記に戻す
+          // 最終的な金額 = 総予算 × 最終的な割合
+          const totalBudget = parseInt(session.totalBudget)
+          const calculatedAmount = Math.floor(totalBudget * cumulativePercentage)
+          finalAmount = calculatedAmount.toString()
+
+          // 数量 = 金額 / 単価
+          finalQuantity = sku.unitPrice > 0 ? Math.floor(calculatedAmount / sku.unitPrice).toString() : '0'
+        }
+      }
 
       // 行データを作成（未入力は空欄、0は"0"として出力）
       const row = [
         ...hierarchyValues,
         sku.skuCode,
-        allocation && allocation.percentage > 0 ? allocation.percentage.toString() : '',
+        finalPercentage !== null && finalPercentage > 0 ? finalPercentage.toFixed(4) : '',
         sku.unitPrice.toString(),
-        allocation && allocation.amount ? allocation.amount : '',
-        allocation && allocation.quantity > 0 ? allocation.quantity.toString() : ''
+        finalAmount,
+        finalQuantity
       ]
 
       rows.push(row)
