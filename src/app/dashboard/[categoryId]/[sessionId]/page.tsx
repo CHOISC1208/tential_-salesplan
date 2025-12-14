@@ -12,6 +12,16 @@ interface Session {
   totalBudget: string
   status: string
   hierarchyDefinitions: HierarchyDefinition[]
+  category?: {
+    id: string
+    name: string
+    userId: string
+    user?: {
+      id: string
+      name: string | null
+      email: string
+    }
+  }
 }
 
 interface HierarchyDefinition {
@@ -344,6 +354,31 @@ export default function SessionPage() {
     } catch (error) {
       console.error('Error updating budget:', error)
       alert('予算額の更新に失敗しました')
+    }
+  }
+
+  const publishSession = async () => {
+    if (!confirm('このセッションを公開しますか？公開すると全ユーザーが閲覧できるようになります。')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${params.sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'confirmed' })
+      })
+
+      if (response.ok) {
+        loadData()
+        alert('セッションを公開しました')
+      } else {
+        const errorData = await response.json()
+        alert(`公開に失敗しました: ${errorData.error || '不明なエラー'}`)
+      }
+    } catch (error) {
+      console.error('Error publishing session:', error)
+      alert('公開に失敗しました')
     }
   }
 
@@ -749,33 +784,54 @@ export default function SessionPage() {
                   </button>
                 </div>
                 <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
-                <div className="flex items-center gap-2">
-                  <p className="text-gray-700">
-                    総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                  </p>
-                  <button
-                    onClick={() => {
-                      setNewBudget(session.totalBudget)
-                      setShowBudgetEditModal(true)
-                    }}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    [編集]
-                  </button>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <p className="text-gray-700">
+                      総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setNewBudget(session.totalBudget)
+                        setShowBudgetEditModal(true)
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      [編集]
+                    </button>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    作成者: {session.category?.user?.name || session.category?.user?.email || '不明'}
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-sm ${
+                    session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                    session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {session.status === 'confirmed' ? '確定' :
+                     session.status === 'archived' ? 'アーカイブ' : '作業中'}
+                  </span>
                 </div>
               </div>
             </div>
             <div className="flex gap-2">
-              {skuData.length === 0 && (
+              {skuData.length === 0 && session.category?.userId === authSession?.user?.id && (
                 <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
                   <Upload size={20} />
                   CSV取り込み
                 </button>
               )}
-              <button onClick={saveAllocations} className="btn btn-primary flex items-center gap-2">
-                <Save size={20} />
-                保存
-              </button>
+              {session.category?.userId === authSession?.user?.id && (
+                <button onClick={saveAllocations} className="btn btn-primary flex items-center gap-2">
+                  <Save size={20} />
+                  保存
+                </button>
+              )}
+              {session.status === 'draft' && session.category?.userId === authSession?.user?.id && (
+                <button onClick={publishSession} className="btn bg-green-600 text-white hover:bg-green-700 flex items-center gap-2">
+                  <Check size={20} />
+                  公開
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -784,10 +840,16 @@ export default function SessionPage() {
       <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         {skuData.length === 0 ? (
           <div className="card text-center py-12">
-            <p className="text-gray-600 mb-4">CSVファイルをアップロードしてください</p>
-            <button onClick={() => setShowUploadModal(true)} className="btn btn-primary">
-              CSV取り込み
-            </button>
+            {session.category?.userId === authSession?.user?.id ? (
+              <>
+                <p className="text-gray-600 mb-4">CSVファイルをアップロードしてください</p>
+                <button onClick={() => setShowUploadModal(true)} className="btn btn-primary">
+                  CSV取り込み
+                </button>
+              </>
+            ) : (
+              <p className="text-gray-600">このセッションにはまだデータがありません</p>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

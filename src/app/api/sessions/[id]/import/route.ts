@@ -31,13 +31,11 @@ export async function POST(
 
     const { id } = await params
 
-    // Verify session belongs to user
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id,
-        category: {
-          userId: session.user.id
-        }
+    // Check if session exists
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -45,6 +43,14 @@ export async function POST(
       return NextResponse.json(
         { error: 'Session not found' },
         { status: 404 }
+      )
+    }
+
+    // Only creator can upload CSV
+    if (budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: '作成者のみがCSVをアップロードできます' },
+        { status: 403 }
       )
     }
 

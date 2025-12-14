@@ -29,7 +29,13 @@ export async function GET(
     const budgetSession = await prisma.session.findUnique({
       where: { id },
       include: {
-        category: true,
+        category: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true }
+            }
+          }
+        },
         hierarchyDefinitions: {
           orderBy: { level: 'asc' }
         }
@@ -40,6 +46,14 @@ export async function GET(
       return NextResponse.json(
         { error: 'Session not found' },
         { status: 404 }
+      )
+    }
+
+    // 作業中（draft）のセッションは作成者のみアクセス可能
+    if (budgetSession.status === 'draft' && budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: 'このセッションは作成者が作業中です' },
+        { status: 403 }
       )
     }
 
@@ -74,15 +88,26 @@ export async function PUT(
     const body = await request.json()
     const data = updateSessionSchema.parse(body)
 
-    // Verify session exists
+    // Verify session exists and belongs to user
     const existingSession = await prisma.session.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        category: true
+      }
     })
 
     if (!existingSession) {
       return NextResponse.json(
         { error: 'Session not found' },
         { status: 404 }
+      )
+    }
+
+    // 作成者のみが編集可能
+    if (existingSession.category.userId !== authSession.user.id) {
+      return NextResponse.json(
+        { error: '作成者のみがセッションを編集できます' },
+        { status: 403 }
       )
     }
 
@@ -132,15 +157,26 @@ export async function DELETE(
 
     const { id } = await params
 
-    // Verify session exists
+    // Verify session exists and belongs to user
     const existingSession = await prisma.session.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        category: true
+      }
     })
 
     if (!existingSession) {
       return NextResponse.json(
         { error: 'Session not found' },
         { status: 404 }
+      )
+    }
+
+    // 作成者のみが削除可能
+    if (existingSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: '作成者のみがセッションを削除できます' },
+        { status: 403 }
       )
     }
 
