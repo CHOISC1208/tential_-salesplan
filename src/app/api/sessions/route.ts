@@ -24,18 +24,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
 
-    const where = categoryId
-      ? {
-          categoryId,
-          category: {
-            userId: session.user.id
-          }
-        }
-      : {
-          category: {
-            userId: session.user.id
-          }
-        }
+    const where = categoryId ? { categoryId } : {}
 
     const sessions = await prisma.session.findMany({
       where,
@@ -74,12 +63,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { categoryId, name, totalBudget } = sessionSchema.parse(body)
 
-    // Verify category belongs to user
-    const category = await prisma.category.findFirst({
-      where: {
-        id: categoryId,
-        userId: authSession.user.id
-      }
+    // Verify category exists
+    const category = await prisma.category.findUnique({
+      where: { id: categoryId }
     })
 
     if (!category) {
