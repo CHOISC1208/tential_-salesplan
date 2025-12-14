@@ -10,6 +10,10 @@ interface Category {
   id: string
   name: string
   createdAt: string
+  user?: {
+    name: string | null
+    email: string
+  }
 }
 
 interface Session {
@@ -269,6 +273,7 @@ export default function DashboardPage() {
                                       予算: ¥{parseInt(session.totalBudget).toLocaleString()}
                                     </p>
                                     <p className="text-xs text-gray-500 mt-1">
+                                      作成者: {session.category.user?.name || session.category.user?.email || '不明'} |
                                       作成日: {new Date(session.createdAt).toLocaleDateString('ja-JP', {
                                         year: 'numeric',
                                         month: '2-digit',

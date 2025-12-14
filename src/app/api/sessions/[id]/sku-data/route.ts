@@ -19,13 +19,11 @@ export async function GET(
 
     const { id } = await params
 
-    // Verify session belongs to user
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id,
-        category: {
-          userId: session.user.id
-        }
+    // Check if session exists
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -33,6 +31,14 @@ export async function GET(
       return NextResponse.json(
         { error: 'Session not found' },
         { status: 404 }
+      )
+    }
+
+    // Draft sessions: only creator can view
+    if (budgetSession.status === 'draft' && budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: 'このセッションは作成者が作業中です' },
+        { status: 403 }
       )
     }
 
