@@ -24,11 +24,8 @@ export async function GET(
 
     const { id } = await params
 
-    const category = await prisma.category.findFirst({
-      where: {
-        id,
-        userId: session.user.id
-      }
+    const category = await prisma.category.findUnique({
+      where: { id }
     })
 
     if (!category) {
@@ -66,12 +63,9 @@ export async function PUT(
     const body = await request.json()
     const { name } = categorySchema.parse(body)
 
-    // Check if category belongs to user
-    const existingCategory = await prisma.category.findFirst({
-      where: {
-        id,
-        userId: session.user.id
-      }
+    // Check if category exists
+    const existingCategory = await prisma.category.findUnique({
+      where: { id }
     })
 
     if (!existingCategory) {
@@ -119,12 +113,9 @@ export async function DELETE(
 
     const { id } = await params
 
-    // Check if category belongs to user
-    const existingCategory = await prisma.category.findFirst({
-      where: {
-        id,
-        userId: session.user.id
-      }
+    // Check if category exists
+    const existingCategory = await prisma.category.findUnique({
+      where: { id }
     })
 
     if (!existingCategory) {

@@ -26,13 +26,8 @@ export async function GET(
 
     const { id } = await params
 
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id,
-        category: {
-          userId: session.user.id
-        }
-      },
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
       include: {
         category: true,
         hierarchyDefinitions: {
@@ -79,14 +74,9 @@ export async function PUT(
     const body = await request.json()
     const data = updateSessionSchema.parse(body)
 
-    // Verify session belongs to user
-    const existingSession = await prisma.session.findFirst({
-      where: {
-        id,
-        category: {
-          userId: authSession.user.id
-        }
-      }
+    // Verify session exists
+    const existingSession = await prisma.session.findUnique({
+      where: { id }
     })
 
     if (!existingSession) {
@@ -142,14 +132,9 @@ export async function DELETE(
 
     const { id } = await params
 
-    // Verify session belongs to user
-    const existingSession = await prisma.session.findFirst({
-      where: {
-        id,
-        category: {
-          userId: session.user.id
-        }
-      }
+    // Verify session exists
+    const existingSession = await prisma.session.findUnique({
+      where: { id }
     })
 
     if (!existingSession) {
