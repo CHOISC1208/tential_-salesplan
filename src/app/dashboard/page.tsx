@@ -10,6 +10,10 @@ interface Category {
   id: string
   name: string
   createdAt: string
+  user?: {
+    name: string | null
+    email: string
+  }
 }
 
 interface Session {
