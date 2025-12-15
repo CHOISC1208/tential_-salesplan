@@ -65,6 +65,8 @@ export default function SpreadsheetPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [focusedPath, setFocusedPath] = useState<string | null>(null)
+  const [showBudgetEditModal, setShowBudgetEditModal] = useState(false)
+  const [newBudget, setNewBudget] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -335,6 +337,33 @@ export default function SpreadsheetPage() {
     }
   }
 
+  const updateBudget = async () => {
+    if (!newBudget || parseInt(newBudget) <= 0) {
+      alert('有効な予算額を入力してください')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${params.sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalBudget: parseInt(newBudget) })
+      })
+
+      if (response.ok) {
+        setShowBudgetEditModal(false)
+        setNewBudget('')
+        loadData()
+        alert('予算額を更新しました')
+      } else {
+        alert('予算額の更新に失敗しました')
+      }
+    } catch (error) {
+      console.error('Error updating budget:', error)
+      alert('予算額の更新に失敗しました')
+    }
+  }
+
   const filterNodes = (nodes: HierarchyNode[], query: string): HierarchyNode[] => {
     if (!query) return nodes
 
@@ -561,9 +590,35 @@ export default function SpreadsheetPage() {
                   </button>
                 </div>
 
-                <p className="text-gray-700">
-                  総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                </p>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <p className="text-gray-700">
+                      総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                    </p>
+                    {session.category?.userId === authSession?.user?.id && (
+                      <button
+                        onClick={() => {
+                          setNewBudget(session.totalBudget)
+                          setShowBudgetEditModal(true)
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                      >
+                        [編集]
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    作成者: {session.category?.user?.name || session.category?.user?.email || '不明'}
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-sm ${
+                    session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                    session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {session.status === 'confirmed' ? '確定' :
+                     session.status === 'archived' ? 'アーカイブ' : '作業中'}
+                  </span>
+                </div>
               </div>
             </div>
             <div className="flex gap-2">
@@ -689,6 +744,42 @@ export default function SpreadsheetPage() {
           </div>
         </div>
       </main>
+
+      {/* Budget Edit Modal */}
+      {showBudgetEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">予算額の編集</h2>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-900 mb-2">新しい予算額</label>
+              <input
+                type="number"
+                value={newBudget}
+                onChange={(e) => setNewBudget(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="100000000"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={updateBudget}
+                className="btn btn-primary flex-1"
+              >
+                更新
+              </button>
+              <button
+                onClick={() => {
+                  setShowBudgetEditModal(false)
+                  setNewBudget('')
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
