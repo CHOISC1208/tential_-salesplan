@@ -347,22 +347,50 @@ export default function SpreadsheetPage() {
     }))
   }
 
-  // Color palette for top-level groups
-  const colorPalette = [
-    { bg: 'bg-blue-50', hover: 'hover:bg-blue-100' },
-    { bg: 'bg-green-50', hover: 'hover:bg-green-100' },
-    { bg: 'bg-yellow-50', hover: 'hover:bg-yellow-100' },
-    { bg: 'bg-purple-50', hover: 'hover:bg-purple-100' },
-    { bg: 'bg-pink-50', hover: 'hover:bg-pink-100' },
-    { bg: 'bg-indigo-50', hover: 'hover:bg-indigo-100' },
-    { bg: 'bg-orange-50', hover: 'hover:bg-orange-100' },
-    { bg: 'bg-teal-50', hover: 'hover:bg-teal-100' }
+  // Color palette by hierarchy level
+  const levelColorPalette = [
+    { bg: 'bg-blue-50', hover: 'hover:bg-blue-100' },      // Level 1
+    { bg: 'bg-green-50', hover: 'hover:bg-green-100' },    // Level 2
+    { bg: 'bg-yellow-50', hover: 'hover:bg-yellow-100' },  // Level 3
+    { bg: 'bg-purple-50', hover: 'hover:bg-purple-100' },  // Level 4
+    { bg: 'bg-pink-50', hover: 'hover:bg-pink-100' },      // Level 5
+    { bg: 'bg-indigo-50', hover: 'hover:bg-indigo-100' },  // Level 6
+    { bg: 'bg-orange-50', hover: 'hover:bg-orange-100' },  // Level 7
+    { bg: 'bg-teal-50', hover: 'hover:bg-teal-100' }       // Level 8+
   ]
 
-  const renderHierarchyNodes = (nodes: HierarchyNode[], depth = 0, rootIndex = 0): JSX.Element[] => {
+  const getSiblingsTotal = (node: HierarchyNode): number => {
+    const pathParts = node.path.split('/')
+    if (pathParts.length === 1) {
+      // Level 1: sum all level 1 nodes
+      return hierarchyTree.reduce((sum, n) => sum + n.percentage, 0)
+    }
+
+    // Find siblings by looking for nodes with same parent
+    const parentPath = pathParts.slice(0, -1).join('/')
+    const findSiblings = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      for (const n of nodes) {
+        if (n.path === parentPath) {
+          return n.children
+        }
+        if (n.children.length > 0) {
+          const found = findSiblings(n.children)
+          if (found.length > 0) return found
+        }
+      }
+      return []
+    }
+
+    const siblings = findSiblings(hierarchyTree)
+    return siblings.reduce((sum, n) => sum + n.percentage, 0)
+  }
+
+  const renderHierarchyNodes = (nodes: HierarchyNode[], depth = 0): JSX.Element[] => {
     return nodes.flatMap((node, index) => {
-      const currentRootIndex = depth === 0 ? index : rootIndex
-      const colors = colorPalette[currentRootIndex % colorPalette.length]
+      const colors = levelColorPalette[(node.level - 1) % levelColorPalette.length]
+      const siblingsTotal = getSiblingsTotal(node)
+      const remaining = 100 - siblingsTotal
+      const isOverLimit = siblingsTotal > 100
 
       return (
         <Fragment key={node.path}>
@@ -392,19 +420,32 @@ export default function SpreadsheetPage() {
               {node.unitPrice !== undefined ? `¥${node.unitPrice.toLocaleString()}` : ''}
             </td>
             <td className="text-right py-2 px-4">
-              {session?.category?.userId === authSession?.user?.id ? (
-                <input
-                  type="number"
-                  value={node.percentage || ''}
-                  onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
-                  className="w-20 px-2 py-1 border border-gray-300 rounded text-right text-gray-900"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                />
-              ) : (
-                <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
-              )}
+              <div className="flex flex-col items-end gap-1">
+                {session?.category?.userId === authSession?.user?.id ? (
+                  <input
+                    type="number"
+                    value={node.percentage || ''}
+                    onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
+                    className={`w-20 px-2 py-1 border rounded text-right text-gray-900 ${
+                      isOverLimit ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    }`}
+                    min="0"
+                    max="100"
+                    step="0.01"
+                  />
+                ) : (
+                  <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
+                )}
+                {index === 0 && (
+                  <div className="text-xs">
+                    {isOverLimit ? (
+                      <span className="text-red-600 font-medium">超過: {Math.abs(remaining).toFixed(1)}%</span>
+                    ) : (
+                      <span className="text-gray-500">残り: {remaining.toFixed(1)}%</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </td>
             <td className="text-right py-2 px-4 text-gray-900">
               ¥{node.amount.toLocaleString()}
@@ -413,7 +454,7 @@ export default function SpreadsheetPage() {
               {node.quantity}
             </td>
           </tr>
-          {node.children.length > 0 && expandedGroups.has(node.path) && renderHierarchyNodes(node.children, depth + 1, currentRootIndex)}
+          {node.children.length > 0 && expandedGroups.has(node.path) && renderHierarchyNodes(node.children, depth + 1)}
         </Fragment>
       )
     })
