@@ -80,9 +80,10 @@ export default function SessionPage() {
     if (status === 'unauthenticated') {
       router.push('/login')
     } else if (status === 'authenticated') {
-      loadData()
+      // Redirect to spreadsheet view by default
+      router.push(`/dashboard/${params.categoryId}/${params.sessionId}/spreadsheet`)
     }
-  }, [status, router])
+  }, [status, router, params.categoryId, params.sessionId])
 
   const loadData = async () => {
     try {
