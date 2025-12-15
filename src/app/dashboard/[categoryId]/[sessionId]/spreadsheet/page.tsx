@@ -1063,6 +1063,12 @@ export default function SpreadsheetPage() {
               </div>
             </div>
             <div className="flex gap-2">
+              <button
+                onClick={() => router.push(`/dashboard/${params.categoryId}/${params.sessionId}`)}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                ステップビュー
+              </button>
               {skuData.length > 0 && (
                 <button onClick={exportToCSV} className="btn bg-gray-600 text-white hover:bg-gray-700 flex items-center gap-2">
                   <Download size={20} />
