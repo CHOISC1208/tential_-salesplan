@@ -6,7 +6,7 @@ import { z } from 'zod'
 
 const skuDataSchema = z.object({
   skuCode: z.string(),
-  unitPrice: z.number().int().positive(),
+  unitPrice: z.number().int().nonnegative(),
   hierarchyValues: z.record(z.string())
 })
 
@@ -17,7 +17,7 @@ const importSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -29,13 +29,13 @@ export async function POST(
       )
     }
 
-    // Verify session belongs to user
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id: params.id,
-        category: {
-          userId: session.user.id
-        }
+    const { id } = await params
+
+    // Check if session exists
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -46,19 +46,27 @@ export async function POST(
       )
     }
 
+    // Only creator can upload CSV
+    if (budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: '作成者のみがCSVをアップロードできます' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
     const { skuData, hierarchyColumns } = importSchema.parse(body)
 
     // Delete existing data
     await prisma.$transaction([
-      prisma.allocation.deleteMany({ where: { sessionId: params.id } }),
-      prisma.skuData.deleteMany({ where: { sessionId: params.id } }),
-      prisma.hierarchyDefinition.deleteMany({ where: { sessionId: params.id } })
+      prisma.allocation.deleteMany({ where: { sessionId: id } }),
+      prisma.skuData.deleteMany({ where: { sessionId: id } }),
+      prisma.hierarchyDefinition.deleteMany({ where: { sessionId: id } })
     ])
 
     // Create hierarchy definitions
     const hierarchyDefinitions = hierarchyColumns.map((col, index) => ({
-      sessionId: params.id,
+      sessionId: id,
       level: index + 1,
       columnName: col,
       displayOrder: index + 1
@@ -70,7 +78,7 @@ export async function POST(
 
     // Create SKU data
     const skuRecords = skuData.map(sku => ({
-      sessionId: params.id,
+      sessionId: id,
       skuCode: sku.skuCode,
       unitPrice: sku.unitPrice,
       hierarchyValues: sku.hierarchyValues

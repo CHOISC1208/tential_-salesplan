@@ -24,23 +24,27 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
 
-    const where = categoryId
-      ? {
-          categoryId,
-          category: {
-            userId: session.user.id
-          }
-        }
-      : {
-          category: {
-            userId: session.user.id
-          }
-        }
+    // 作業中（draft）のセッションは作成者のみ、公開済み（confirmed/archived）は全員が見れる
+    const where: any = categoryId ? { categoryId } : {}
+
+    where.OR = [
+      { status: { in: ['confirmed', 'archived'] } }, // 公開済みは全員
+      {
+        status: 'draft',
+        category: { userId: session.user.id } // 作業中は作成者のみ
+      }
+    ]
 
     const sessions = await prisma.session.findMany({
       where,
       include: {
-        category: true
+        category: {
+          include: {
+            user: {
+              select: { name: true, email: true }
+            }
+          }
+        }
       },
       orderBy: { createdAt: 'desc' }
     })
@@ -74,12 +78,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { categoryId, name, totalBudget } = sessionSchema.parse(body)
 
-    // Verify category belongs to user
-    const category = await prisma.category.findFirst({
-      where: {
-        id: categoryId,
-        userId: authSession.user.id
-      }
+    // Verify category exists
+    const category = await prisma.category.findUnique({
+      where: { id: categoryId }
     })
 
     if (!category) {

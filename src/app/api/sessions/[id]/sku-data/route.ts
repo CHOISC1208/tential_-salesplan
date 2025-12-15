@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -17,13 +17,13 @@ export async function GET(
       )
     }
 
-    // Verify session belongs to user
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id: params.id,
-        category: {
-          userId: session.user.id
-        }
+    const { id } = await params
+
+    // Check if session exists
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -34,8 +34,16 @@ export async function GET(
       )
     }
 
+    // Draft sessions: only creator can view
+    if (budgetSession.status === 'draft' && budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: 'このセッションは作成者が作業中です' },
+        { status: 403 }
+      )
+    }
+
     const skuData = await prisma.skuData.findMany({
-      where: { sessionId: params.id },
+      where: { sessionId: id },
       orderBy: { createdAt: 'asc' }
     })
 

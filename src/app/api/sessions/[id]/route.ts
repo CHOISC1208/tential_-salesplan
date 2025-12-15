@@ -15,7 +15,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: sessionId } = await params
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -25,17 +25,14 @@ export async function GET(
       )
     }
 
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id: sessionId,
-        category: {
-          userId: session.user.id
-        }
-      },
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
       include: {
         category: {
           include: {
-            user: true
+            user: {
+              select: { id: true, name: true, email: true }
+            }
           }
         },
         hierarchyDefinitions: {
@@ -48,6 +45,14 @@ export async function GET(
       return NextResponse.json(
         { error: 'Session not found' },
         { status: 404 }
+      )
+    }
+
+    // 作業中（draft）のセッションは作成者のみアクセス可能
+    if (budgetSession.status === 'draft' && budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: 'このセッションは作成者が作業中です' },
+        { status: 403 }
       )
     }
 
@@ -69,7 +74,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: sessionId } = await params
+    const { id } = await params
     const authSession = await getServerSession(authOptions)
 
     if (!authSession?.user?.id) {
@@ -82,13 +87,11 @@ export async function PUT(
     const body = await request.json()
     const data = updateSessionSchema.parse(body)
 
-    // Verify session belongs to user
-    const existingSession = await prisma.session.findFirst({
-      where: {
-        id: sessionId,
-        category: {
-          userId: authSession.user.id
-        }
+    // Verify session exists and belongs to user
+    const existingSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -99,13 +102,21 @@ export async function PUT(
       )
     }
 
+    // 作成者のみが編集可能
+    if (existingSession.category.userId !== authSession.user.id) {
+      return NextResponse.json(
+        { error: '作成者のみがセッションを編集できます' },
+        { status: 403 }
+      )
+    }
+
     const updateData: any = {}
     if (data.name) updateData.name = data.name
     if (data.status) updateData.status = data.status
     if (data.totalBudget) updateData.totalBudget = BigInt(data.totalBudget)
 
     const updatedSession = await prisma.session.update({
-      where: { id: sessionId },
+      where: { id },
       data: updateData
     })
 
@@ -134,7 +145,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: sessionId } = await params
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -144,13 +155,11 @@ export async function DELETE(
       )
     }
 
-    // Verify session belongs to user
-    const existingSession = await prisma.session.findFirst({
-      where: {
-        id: sessionId,
-        category: {
-          userId: session.user.id
-        }
+    // Verify session exists and belongs to user
+    const existingSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -161,8 +170,16 @@ export async function DELETE(
       )
     }
 
+    // 作成者のみが削除可能
+    if (existingSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: '作成者のみがセッションを削除できます' },
+        { status: 403 }
+      )
+    }
+
     await prisma.session.delete({
-      where: { id: sessionId }
+      where: { id }
     })
 
     return NextResponse.json({ success: true })

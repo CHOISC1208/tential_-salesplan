@@ -22,7 +22,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: sessionId } = await params
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -32,13 +32,11 @@ export async function GET(
       )
     }
 
-    // Verify session belongs to user
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id: sessionId,
-        category: {
-          userId: session.user.id
-        }
+    // Check if session exists
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -49,8 +47,16 @@ export async function GET(
       )
     }
 
+    // Draft sessions: only creator can view
+    if (budgetSession.status === 'draft' && budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: 'このセッションは作成者が作業中です' },
+        { status: 403 }
+      )
+    }
+
     const allocations = await prisma.allocation.findMany({
-      where: { sessionId },
+      where: { sessionId: id },
       orderBy: [{ level: 'asc' }, { hierarchyPath: 'asc' }]
     })
 
@@ -76,7 +82,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: sessionId } = await params
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -86,13 +92,11 @@ export async function PUT(
       )
     }
 
-    // Verify session belongs to user
-    const budgetSession = await prisma.session.findFirst({
-      where: {
-        id: sessionId,
-        category: {
-          userId: session.user.id
-        }
+    // Check if session exists
+    const budgetSession = await prisma.session.findUnique({
+      where: { id },
+      include: {
+        category: true
       }
     })
 
@@ -103,16 +107,24 @@ export async function PUT(
       )
     }
 
+    // Only creator can edit allocations
+    if (budgetSession.category.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: '作成者のみが配分を編集できます' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
     const { allocations } = allocationsUpdateSchema.parse(body)
 
     // Delete existing allocations and create new ones
     await prisma.allocation.deleteMany({
-      where: { sessionId }
+      where: { sessionId: id }
     })
 
     const allocationRecords = allocations.map(a => ({
-      sessionId,
+      sessionId: id,
       hierarchyPath: a.hierarchyPath,
       level: a.level,
       percentage: a.percentage,

@@ -8,9 +8,9 @@ const categorySchema = z.object({
   name: z.string().min(1).max(100)
 })
 
-export async function PUT(
+export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -22,15 +22,50 @@ export async function PUT(
       )
     }
 
+    const { id } = await params
+
+    const category = await prisma.category.findUnique({
+      where: { id }
+    })
+
+    if (!category) {
+      return NextResponse.json(
+        { error: 'Category not found' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(category)
+  } catch (error) {
+    console.error('Error fetching category:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const { id } = await params
     const body = await request.json()
     const { name } = categorySchema.parse(body)
 
-    // Check if category belongs to user
-    const existingCategory = await prisma.category.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id
-      }
+    // Check if category exists
+    const existingCategory = await prisma.category.findUnique({
+      where: { id }
     })
 
     if (!existingCategory) {
@@ -41,7 +76,7 @@ export async function PUT(
     }
 
     const category = await prisma.category.update({
-      where: { id: params.id },
+      where: { id },
       data: { name }
     })
 
@@ -64,7 +99,7 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -76,12 +111,11 @@ export async function DELETE(
       )
     }
 
-    // Check if category belongs to user
-    const existingCategory = await prisma.category.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id
-      }
+    const { id } = await params
+
+    // Check if category exists
+    const existingCategory = await prisma.category.findUnique({
+      where: { id }
     })
 
     if (!existingCategory) {
@@ -92,7 +126,7 @@ export async function DELETE(
     }
 
     await prisma.category.delete({
-      where: { id: params.id }
+      where: { id }
     })
 
     return NextResponse.json({ success: true })

@@ -10,7 +10,7 @@ const autoAllocateSchema = z.object({
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -22,10 +22,12 @@ export async function POST(
       )
     }
 
+    const { id } = await params
+
     // Verify session belongs to user
     const budgetSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id,
         category: {
           userId: session.user.id
         }
@@ -49,7 +51,7 @@ export async function POST(
 
     // Get all SKU data
     const skuData = await prisma.skuData.findMany({
-      where: { sessionId: params.id }
+      where: { sessionId: id }
     })
 
     if (skuData.length === 0) {
@@ -97,7 +99,7 @@ export async function POST(
 
     // Create allocations
     const allocations = paths.map(path => ({
-      sessionId: params.id,
+      sessionId: id,
       hierarchyPath: path,
       level,
       percentage,
@@ -108,7 +110,7 @@ export async function POST(
     // Delete existing allocations for this level
     await prisma.allocation.deleteMany({
       where: {
-        sessionId: params.id,
+        sessionId: id,
         level
       }
     })
