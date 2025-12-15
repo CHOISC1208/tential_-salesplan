@@ -369,16 +369,24 @@ export default function SpreadsheetPage() {
 
   const saveAllocations = async () => {
     try {
+      // Convert amount from string to number for API
+      const allocationsToSave = allocations.map(a => ({
+        ...a,
+        amount: parseInt(a.amount)
+      }))
+
       // Save all allocations (all periods at once)
       const response = await fetch(`/api/sessions/${params.sessionId}/allocations`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allocations })
+        body: JSON.stringify({ allocations: allocationsToSave })
       })
 
       if (response.ok) {
         alert('保存しました')
       } else {
+        const error = await response.json()
+        console.error('Save error:', error)
         alert('保存に失敗しました')
       }
     } catch (error) {
