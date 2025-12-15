@@ -65,7 +65,6 @@ export default function SpreadsheetPage() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [focusedPath, setFocusedPath] = useState<string | null>(null)
-  const [hoveredPath, setHoveredPath] = useState<string | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -413,11 +412,10 @@ export default function SpreadsheetPage() {
       const remaining = 100 - siblingsTotal
       const isOverLimit = siblingsTotal > 100
 
-      // Check if this node should be highlighted (is sibling of focused or hovered node)
+      // Check if this node should be highlighted (is sibling of focused node)
       const isFocusedSibling = focusedPath && areSiblings(node.path, focusedPath)
-      const isHoveredSibling = hoveredPath && areSiblings(node.path, hoveredPath)
 
-      // Determine row background color with priority: focus > hover > default
+      // Determine row background color
       let rowBgClass = colors.bg
       let rowHoverClass = colors.hover
 
@@ -425,15 +423,26 @@ export default function SpreadsheetPage() {
         // Darker highlight for focused siblings
         rowBgClass = 'bg-blue-200 ring-2 ring-blue-400'
         rowHoverClass = 'hover:bg-blue-300'
-      } else if (isHoveredSibling) {
-        // Lighter highlight for hovered siblings
-        rowBgClass = 'bg-blue-100'
-        rowHoverClass = 'hover:bg-blue-200'
+      }
+
+      // Handle row click to toggle group
+      const handleRowClick = (e: React.MouseEvent) => {
+        // Don't toggle if clicking on input, button, or interactive elements
+        const target = e.target as HTMLElement
+        if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.closest('button')) {
+          return
+        }
+        if (node.children.length > 0) {
+          toggleGroup(node.path)
+        }
       }
 
       return (
         <Fragment key={node.path}>
-          <tr className={`border-b border-gray-200 ${rowBgClass} ${rowHoverClass} transition-colors duration-150`}>
+          <tr
+            className={`border-b border-gray-200 ${rowBgClass} ${rowHoverClass} transition-colors duration-150 ${node.children.length > 0 ? 'cursor-pointer' : ''}`}
+            onClick={handleRowClick}
+          >
             <td className={`py-2 px-4 sticky left-0 ${rowBgClass} z-10`} style={{ paddingLeft: `${depth * 24 + 16}px` }}>
               <div className="flex items-center gap-2">
                 {node.children.length > 0 && (
@@ -467,8 +476,6 @@ export default function SpreadsheetPage() {
                     onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
                     onFocus={() => setFocusedPath(node.path)}
                     onBlur={() => setFocusedPath(null)}
-                    onMouseEnter={() => setHoveredPath(node.path)}
-                    onMouseLeave={() => setHoveredPath(null)}
                     className={`w-20 px-2 py-1 border rounded text-right text-gray-900 ${
                       isOverLimit ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
@@ -479,11 +486,11 @@ export default function SpreadsheetPage() {
                 ) : (
                   <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
                 )}
-                <div className={`${(isFocusedSibling || isHoveredSibling) ? 'text-sm font-bold' : 'text-xs'}`}>
+                <div className={`${isFocusedSibling ? 'text-sm font-bold' : 'text-xs'}`}>
                   {isOverLimit ? (
                     <span className="text-red-600 font-medium">超過: {Math.abs(remaining).toFixed(1)}%</span>
                   ) : (
-                    <span className={`${isFocusedSibling ? 'text-blue-800' : isHoveredSibling ? 'text-blue-700' : 'text-gray-500'}`}>
+                    <span className={`${isFocusedSibling ? 'text-blue-800' : 'text-gray-500'}`}>
                       残り: {remaining.toFixed(1)}%
                     </span>
                   )}
