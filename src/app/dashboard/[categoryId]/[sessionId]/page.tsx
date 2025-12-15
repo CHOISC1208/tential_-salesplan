@@ -640,7 +640,7 @@ export default function SessionPage() {
                   <label className="block text-sm font-medium text-gray-900 mb-2">期間名</label>
                   <input
                     type="text"
-                    value={periodModalValue}
+                    value={periodModalValue || ''}
                     onChange={(e) => setPeriodModalValue(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="例: 2024-05, Q1, 春"
