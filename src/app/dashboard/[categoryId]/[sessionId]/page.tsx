@@ -552,6 +552,12 @@ export default function SessionPage() {
               </div>
             </div>
             <div className="flex gap-2">
+              <button
+                onClick={() => router.push(`/dashboard/${params.categoryId}/${params.sessionId}/spreadsheet`)}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                スプレッドシートビュー
+              </button>
               <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
                 <Upload size={20} />
                 CSV取り込み
