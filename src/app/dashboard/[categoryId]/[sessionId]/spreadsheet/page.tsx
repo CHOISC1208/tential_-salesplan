@@ -392,6 +392,12 @@ export default function SpreadsheetPage() {
       const remaining = 100 - siblingsTotal
       const isOverLimit = siblingsTotal > 100
 
+      // Check if this is the first sibling in its group (same parent)
+      const currentParentPath = node.path.split('/').slice(0, -1).join('/')
+      const isFirstSibling = index === 0 || (
+        nodes[index - 1].path.split('/').slice(0, -1).join('/') !== currentParentPath
+      )
+
       return (
         <Fragment key={node.path}>
           <tr className={`border-b border-gray-200 ${colors.bg} ${colors.hover}`}>
@@ -436,7 +442,7 @@ export default function SpreadsheetPage() {
                 ) : (
                   <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
                 )}
-                {index === 0 && (
+                {isFirstSibling && (
                   <div className="text-xs">
                     {isOverLimit ? (
                       <span className="text-red-600 font-medium">超過: {Math.abs(remaining).toFixed(1)}%</span>
