@@ -12,9 +12,10 @@ const updateSessionSchema = z.object({
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: sessionId } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -26,13 +27,17 @@ export async function GET(
 
     const budgetSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id: sessionId,
         category: {
           userId: session.user.id
         }
       },
       include: {
-        category: true,
+        category: {
+          include: {
+            user: true
+          }
+        },
         hierarchyDefinitions: {
           orderBy: { level: 'asc' }
         }
@@ -61,9 +66,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: sessionId } = await params
     const authSession = await getServerSession(authOptions)
 
     if (!authSession?.user?.id) {
@@ -79,7 +85,7 @@ export async function PUT(
     // Verify session belongs to user
     const existingSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id: sessionId,
         category: {
           userId: authSession.user.id
         }
@@ -99,7 +105,7 @@ export async function PUT(
     if (data.totalBudget) updateData.totalBudget = BigInt(data.totalBudget)
 
     const updatedSession = await prisma.session.update({
-      where: { id: params.id },
+      where: { id: sessionId },
       data: updateData
     })
 
@@ -125,9 +131,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: sessionId } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -140,7 +147,7 @@ export async function DELETE(
     // Verify session belongs to user
     const existingSession = await prisma.session.findFirst({
       where: {
-        id: params.id,
+        id: sessionId,
         category: {
           userId: session.user.id
         }
@@ -155,7 +162,7 @@ export async function DELETE(
     }
 
     await prisma.session.delete({
-      where: { id: params.id }
+      where: { id: sessionId }
     })
 
     return NextResponse.json({ success: true })

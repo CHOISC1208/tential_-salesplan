@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Upload, Download, Save } from 'lucide-react'
+import { ArrowLeft, Upload, Download, Save, Calendar, Plus, Edit2, Trash2 } from 'lucide-react'
 import Papa from 'papaparse'
 
 interface Session {
@@ -12,6 +12,16 @@ interface Session {
   totalBudget: string
   status: string
   hierarchyDefinitions: HierarchyDefinition[]
+  category?: {
+    id: string
+    name: string
+    userId: string
+    user?: {
+      id: string
+      name: string | null
+      email: string
+    }
+  }
 }
 
 interface HierarchyDefinition {
@@ -32,6 +42,7 @@ interface Allocation {
   percentage: number
   amount: string
   quantity: number
+  period?: string | null
 }
 
 interface HierarchyNode {
@@ -56,6 +67,15 @@ export default function SessionPage() {
   const [loading, setLoading] = useState(true)
   const [showUploadModal, setShowUploadModal] = useState(false)
 
+  // Period management states
+  const [availablePeriods, setAvailablePeriods] = useState<Array<string | null>>([])
+  const [selectedPeriod, setSelectedPeriod] = useState<string | null>(null)
+  const [showPeriodModal, setShowPeriodModal] = useState(false)
+  const [periodModalMode, setPeriodModalMode] = useState<'add' | 'rename' | 'delete'>('add')
+  const [periodModalValue, setPeriodModalValue] = useState<string | null>(null)
+  const [periodModalNewValue, setPeriodModalNewValue] = useState('')
+  const [periodModalCopyFrom, setPeriodModalCopyFrom] = useState<string | null>(null)
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login')
@@ -66,10 +86,11 @@ export default function SessionPage() {
 
   const loadData = async () => {
     try {
-      const [sessionRes, skuRes, allocRes] = await Promise.all([
+      const [sessionRes, skuRes, allocRes, periodsRes] = await Promise.all([
         fetch(`/api/sessions/${params.sessionId}`),
         fetch(`/api/sessions/${params.sessionId}/sku-data`),
-        fetch(`/api/sessions/${params.sessionId}/allocations`)
+        fetch(`/api/sessions/${params.sessionId}/allocations`),
+        fetch(`/api/sessions/${params.sessionId}/periods`)
       ])
 
       if (sessionRes.ok) {
@@ -85,6 +106,15 @@ export default function SessionPage() {
       if (allocRes.ok) {
         const allocationsData = await allocRes.json()
         setAllocations(allocationsData)
+      }
+
+      if (periodsRes.ok) {
+        const { periods } = await periodsRes.json()
+        setAvailablePeriods(periods)
+        // Set initial selected period
+        if (periods.length > 0 && selectedPeriod === null) {
+          setSelectedPeriod(periods[0])
+        }
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -175,7 +205,7 @@ export default function SessionPage() {
     const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
     const quantity = totalUnitPrice > 0 ? Math.floor(amount / totalUnitPrice) : 0
 
-    const existingIndex = allocations.findIndex(a => a.hierarchyPath === path)
+    const existingIndex = allocations.findIndex(a => a.hierarchyPath === path && a.period === selectedPeriod)
     if (existingIndex >= 0) {
       const updated = [...allocations]
       updated[existingIndex] = {
@@ -193,7 +223,8 @@ export default function SessionPage() {
           level: path.split('/').length,
           percentage,
           amount: amount.toString(),
-          quantity
+          quantity,
+          period: selectedPeriod
         }
       ])
     }
@@ -210,6 +241,105 @@ export default function SessionPage() {
     } catch (error) {
       console.error('Error saving allocations:', error)
       alert('保存に失敗しました')
+    }
+  }
+
+  // Period management functions
+  const addPeriod = async () => {
+    if (!periodModalValue || periodModalValue.trim() === '') {
+      alert('期間名を入力してください')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${params.sessionId}/periods`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period: periodModalValue.trim(),
+          copyFrom: periodModalCopyFrom
+        })
+      })
+
+      if (response.ok) {
+        alert('期間を追加しました')
+        setShowPeriodModal(false)
+        setPeriodModalValue('')
+        setPeriodModalCopyFrom(null)
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(`期間の追加に失敗しました: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error adding period:', error)
+      alert('期間の追加に失敗しました')
+    }
+  }
+
+  const renamePeriod = async () => {
+    if (!periodModalNewValue || periodModalNewValue.trim() === '') {
+      alert('新しい期間名を入力してください')
+      return
+    }
+
+    try {
+      const encodedPeriod = encodeURIComponent(periodModalValue === null ? 'null' : periodModalValue)
+      const response = await fetch(`/api/sessions/${params.sessionId}/periods/${encodedPeriod}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPeriod: periodModalNewValue.trim() })
+      })
+
+      if (response.ok) {
+        alert('期間名を変更しました')
+        setShowPeriodModal(false)
+        setPeriodModalValue('')
+        setPeriodModalNewValue('')
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(`期間名の変更に失敗しました: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error renaming period:', error)
+      alert('期間名の変更に失敗しました')
+    }
+  }
+
+  const deletePeriod = async () => {
+    if (!confirm(`本当に期間「${periodModalValue === null ? 'デフォルト' : periodModalValue}」を削除しますか？この期間の全ての配分データが削除されます。`)) {
+      return
+    }
+
+    try {
+      const encodedPeriod = encodeURIComponent(periodModalValue === null ? 'null' : periodModalValue)
+      const response = await fetch(`/api/sessions/${params.sessionId}/periods/${encodedPeriod}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        alert('期間を削除しました')
+        setShowPeriodModal(false)
+        setPeriodModalValue('')
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(`期間の削除に失敗しました: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error deleting period:', error)
+      alert('期間の削除に失敗しました')
+    }
+  }
+
+  const handlePeriodModalSubmit = () => {
+    if (periodModalMode === 'add') {
+      addPeriod()
+    } else if (periodModalMode === 'rename') {
+      renamePeriod()
+    } else if (periodModalMode === 'delete') {
+      deletePeriod()
     }
   }
 
@@ -230,6 +360,9 @@ export default function SessionPage() {
     const tree: HierarchyNode[] = []
     const nodeMap = new Map<string, HierarchyNode>()
 
+    // Filter allocations by selected period
+    const periodAllocations = allocations.filter(a => a.period === selectedPeriod)
+
     // Build tree structure
     for (const sku of skuData) {
       for (let level = 1; level <= session.hierarchyDefinitions.length; level++) {
@@ -239,7 +372,7 @@ export default function SessionPage() {
         if (!nodeMap.has(path)) {
           const parts = path.split('/')
           const name = parts[parts.length - 1]
-          const allocation = allocations.find(a => a.hierarchyPath === path)
+          const allocation = periodAllocations.find(a => a.hierarchyPath === path)
 
           const node: HierarchyNode = {
             path,
@@ -273,7 +406,7 @@ export default function SessionPage() {
     if (session && skuData.length > 0) {
       setHierarchyTree(buildHierarchyTree())
     }
-  }, [session, skuData, allocations])
+  }, [session, skuData, allocations, selectedPeriod])
 
   if (status === 'loading' || loading) {
     return (
@@ -302,9 +435,120 @@ export default function SessionPage() {
               </button>
               <div>
                 <h1 className="text-3xl font-bold">{session.name}</h1>
-                <p className="text-gray-600">
-                  総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
-                </p>
+                <div className="flex items-center gap-4">
+                  <p className="text-gray-600">
+                    総予算: ¥{parseInt(session.totalBudget).toLocaleString()}
+                  </p>
+                  <div className="text-sm text-gray-600">
+                    作成者: {session.category?.user?.name || session.category?.user?.email || '不明'}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-full text-sm ${
+                      session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                      session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {session.status === 'confirmed' ? '確定' :
+                       session.status === 'archived' ? 'アーカイブ' : '作業中'}
+                    </span>
+                    {session.category?.userId === authSession?.user?.id && session.status !== 'draft' && (
+                      <button
+                        onClick={async () => {
+                          if (confirm('ステータスを「作業中」に戻しますか？')) {
+                            try {
+                              const response = await fetch(`/api/sessions/${params.sessionId}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status: 'draft' })
+                              })
+                              if (response.ok) {
+                                loadData()
+                                alert('ステータスを「作業中」に変更しました')
+                              } else {
+                                alert('ステータスの変更に失敗しました')
+                              }
+                            } catch (error) {
+                              console.error('Error updating status:', error)
+                              alert('ステータスの変更に失敗しました')
+                            }
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        作業中に戻す
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Period Selection */}
+                  {availablePeriods.length > 0 && (
+                    <div className="flex items-center gap-2 border-l pl-4">
+                      <Calendar size={16} className="text-gray-600" />
+                      <span className="text-sm text-gray-600">期間:</span>
+                      <select
+                        value={selectedPeriod === null ? 'null' : selectedPeriod || ''}
+                        onChange={(e) => {
+                          const val = e.target.value === 'null' ? null : e.target.value
+                          setSelectedPeriod(val)
+                        }}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm"
+                      >
+                        {availablePeriods.map(period => (
+                          <option key={period === null ? 'null' : period} value={period === null ? 'null' : period}>
+                            {period === null ? 'デフォルト' : period}
+                          </option>
+                        ))}
+                      </select>
+                      {session.category?.userId === authSession?.user?.id && (
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              setPeriodModalMode('add')
+                              setPeriodModalValue('')
+                              setPeriodModalCopyFrom(availablePeriods[0] || null)
+                              setShowPeriodModal(true)
+                            }}
+                            className="p-1 text-green-600 hover:bg-green-50 rounded"
+                            title="期間を追加"
+                          >
+                            <Plus size={16} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (availablePeriods.length === 0) {
+                                alert('変更する期間がありません')
+                                return
+                              }
+                              setPeriodModalMode('rename')
+                              setPeriodModalValue(availablePeriods[0])
+                              setPeriodModalNewValue(availablePeriods[0] === null ? '' : availablePeriods[0] || '')
+                              setShowPeriodModal(true)
+                            }}
+                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                            title="期間名を変更"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (availablePeriods.length === 0) {
+                                alert('削除する期間がありません')
+                                return
+                              }
+                              setPeriodModalMode('delete')
+                              setPeriodModalValue(availablePeriods[0])
+                              setShowPeriodModal(true)
+                            }}
+                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                            title="期間を削除"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex gap-2">
@@ -354,7 +598,7 @@ export default function SessionPage() {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">CSV取り込み</h2>
             <div className="mb-4">
@@ -376,6 +620,134 @@ export default function SessionPage() {
             >
               キャンセル
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Period Management Modal */}
+      {showPeriodModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">
+              {periodModalMode === 'add' && '期間を追加'}
+              {periodModalMode === 'rename' && '期間名を変更'}
+              {periodModalMode === 'delete' && '期間を削除'}
+            </h2>
+
+            {periodModalMode === 'add' && (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">期間名</label>
+                  <input
+                    type="text"
+                    value={periodModalValue}
+                    onChange={(e) => setPeriodModalValue(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="例: 2024-05, Q1, 春"
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">コピー元期間（オプション）</label>
+                  <select
+                    value={periodModalCopyFrom === null ? 'null' : periodModalCopyFrom || ''}
+                    onChange={(e) => setPeriodModalCopyFrom(e.target.value === 'null' ? null : e.target.value === '' ? null : e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  >
+                    <option value="">コピーしない（新規作成）</option>
+                    {availablePeriods.map(period => (
+                      <option key={period === null ? 'null' : period} value={period === null ? 'null' : period}>
+                        {period === null ? 'デフォルト' : period}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    既存の期間から配分データをコピーして新しい期間を作成できます
+                  </p>
+                </div>
+              </>
+            )}
+
+            {periodModalMode === 'rename' && (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">対象期間を選択</label>
+                  <select
+                    value={periodModalValue === null ? 'null' : periodModalValue || ''}
+                    onChange={(e) => {
+                      const val = e.target.value === 'null' ? null : e.target.value
+                      setPeriodModalValue(val)
+                      setPeriodModalNewValue(val === null ? '' : val)
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  >
+                    {availablePeriods.map(period => (
+                      <option key={period === null ? 'null' : period} value={period === null ? 'null' : period}>
+                        {period === null ? 'デフォルト' : period}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">新しい期間名</label>
+                  <input
+                    type="text"
+                    value={periodModalNewValue}
+                    onChange={(e) => setPeriodModalNewValue(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="新しい期間名"
+                  />
+                </div>
+              </>
+            )}
+
+            {periodModalMode === 'delete' && (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">削除する期間を選択</label>
+                  <select
+                    value={periodModalValue === null ? 'null' : periodModalValue || ''}
+                    onChange={(e) => setPeriodModalValue(e.target.value === 'null' ? null : e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  >
+                    {availablePeriods.map(period => (
+                      <option key={period === null ? 'null' : period} value={period === null ? 'null' : period}>
+                        {period === null ? 'デフォルト' : period}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-gray-900 mb-4">
+                  期間「{periodModalValue === null ? 'デフォルト' : periodModalValue}」を削除しますか？
+                  この期間の全ての配分データが削除されます。この操作は元に戻せません。
+                </p>
+              </>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={handlePeriodModalSubmit}
+                className={`btn flex-1 ${
+                  periodModalMode === 'delete'
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'btn-primary'
+                }`}
+              >
+                {periodModalMode === 'add' && '追加'}
+                {periodModalMode === 'rename' && '変更'}
+                {periodModalMode === 'delete' && '削除'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowPeriodModal(false)
+                  setPeriodModalValue('')
+                  setPeriodModalNewValue('')
+                  setPeriodModalCopyFrom(null)
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                キャンセル
+              </button>
+            </div>
           </div>
         </div>
       )}
