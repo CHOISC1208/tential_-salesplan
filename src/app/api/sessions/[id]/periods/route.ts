@@ -101,7 +101,7 @@ export async function POST(
       );
     }
 
-    if (copyFrom !== undefined) {
+    if (copyFrom !== undefined && copyFrom !== null && copyFrom !== '') {
       // Copy allocations from another period
       const sourceAllocations = await prisma.allocation.findMany({
         where: {
@@ -110,25 +110,20 @@ export async function POST(
         },
       });
 
-      if (sourceAllocations.length === 0) {
-        return NextResponse.json(
-          { error: 'Source period not found or has no allocations' },
-          { status: 404 }
-        );
+      // If source has allocations, copy them. Otherwise just create empty period.
+      if (sourceAllocations.length > 0) {
+        await prisma.allocation.createMany({
+          data: sourceAllocations.map(allocation => ({
+            sessionId: allocation.sessionId,
+            hierarchyPath: allocation.hierarchyPath,
+            level: allocation.level,
+            percentage: allocation.percentage,
+            amount: allocation.amount,
+            quantity: allocation.quantity,
+            period: period.trim(),
+          })),
+        });
       }
-
-      // Create new allocations with the new period
-      await prisma.allocation.createMany({
-        data: sourceAllocations.map(allocation => ({
-          sessionId: allocation.sessionId,
-          hierarchyPath: allocation.hierarchyPath,
-          level: allocation.level,
-          percentage: allocation.percentage,
-          amount: allocation.amount,
-          quantity: allocation.quantity,
-          period: period.trim(),
-        })),
-      });
 
       return NextResponse.json({
         success: true,
