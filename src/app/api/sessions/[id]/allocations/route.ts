@@ -9,7 +9,8 @@ const allocationSchema = z.object({
   level: z.number().int().positive(),
   percentage: z.number().min(0).max(100),
   amount: z.number().int().nonnegative(),
-  quantity: z.number().int().nonnegative()
+  quantity: z.number().int().nonnegative(),
+  period: z.string().nullable().optional()
 })
 
 const allocationsUpdateSchema = z.object({
@@ -21,6 +22,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -29,8 +31,6 @@ export async function GET(
         { status: 401 }
       )
     }
-
-    const { id } = await params
 
     // Check if session exists
     const budgetSession = await prisma.session.findUnique({
@@ -64,7 +64,8 @@ export async function GET(
       allocations.map(a => ({
         ...a,
         percentage: parseFloat(a.percentage.toString()),
-        amount: a.amount.toString()
+        amount: a.amount.toString(),
+        period: a.period
       }))
     )
   } catch (error) {
@@ -81,6 +82,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -89,8 +91,6 @@ export async function PUT(
         { status: 401 }
       )
     }
-
-    const { id } = await params
 
     // Check if session exists
     const budgetSession = await prisma.session.findUnique({
@@ -129,7 +129,8 @@ export async function PUT(
       level: a.level,
       percentage: a.percentage,
       amount: BigInt(a.amount),
-      quantity: a.quantity
+      quantity: a.quantity,
+      period: a.period || null
     }))
 
     await prisma.allocation.createMany({

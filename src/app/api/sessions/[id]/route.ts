@@ -15,6 +15,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -23,8 +24,6 @@ export async function GET(
         { status: 401 }
       )
     }
-
-    const { id } = await params
 
     const budgetSession = await prisma.session.findUnique({
       where: { id },
@@ -75,6 +74,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const authSession = await getServerSession(authOptions)
 
     if (!authSession?.user?.id) {
@@ -84,7 +84,6 @@ export async function PUT(
       )
     }
 
-    const { id } = await params
     const body = await request.json()
     const data = updateSessionSchema.parse(body)
 
@@ -146,6 +145,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.id) {
@@ -154,8 +154,6 @@ export async function DELETE(
         { status: 401 }
       )
     }
-
-    const { id } = await params
 
     // Verify session exists and belongs to user
     const existingSession = await prisma.session.findUnique({

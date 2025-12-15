@@ -3,7 +3,7 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Save, ChevronDown, ChevronRight, ChevronUp, Download } from 'lucide-react'
+import { ArrowLeft, Save, ChevronDown, ChevronRight, ChevronUp, Download, Calendar, Plus, Edit2, Trash2 } from 'lucide-react'
 
 interface Session {
   id: string
@@ -39,16 +39,21 @@ interface Allocation {
   percentage: number
   amount: string
   quantity: number
+  period?: string | null
+}
+
+interface PeriodData {
+  percentage: number
+  amount: number
+  quantity: number
 }
 
 interface HierarchyNode {
   path: string
   name: string
   level: number
-  percentage: number
-  amount: number
   unitPrice?: number
-  quantity: number
+  periodData: Map<string | null, PeriodData> // period -> data
   children: HierarchyNode[]
 }
 
@@ -72,6 +77,14 @@ export default function SpreadsheetPage() {
   const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
+  // Period management states
+  const [availablePeriods, setAvailablePeriods] = useState<Array<string | null>>([])
+  const [showPeriodModal, setShowPeriodModal] = useState(false)
+  const [periodModalMode, setPeriodModalMode] = useState<'add' | 'rename' | 'delete'>('add')
+  const [periodModalValue, setPeriodModalValue] = useState<string | null>(null)
+  const [periodModalNewValue, setPeriodModalNewValue] = useState('')
+  const [periodModalCopyFrom, setPeriodModalCopyFrom] = useState<string | null>(null)
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login')
@@ -82,10 +95,11 @@ export default function SpreadsheetPage() {
 
   const loadData = async () => {
     try {
-      const [sessionRes, skuRes, allocRes, categoryRes] = await Promise.all([
+      const [sessionRes, skuRes, allocRes, periodsRes, categoryRes] = await Promise.all([
         fetch(`/api/sessions/${params.sessionId}`),
         fetch(`/api/sessions/${params.sessionId}/sku-data`),
         fetch(`/api/sessions/${params.sessionId}/allocations`),
+        fetch(`/api/sessions/${params.sessionId}/periods`),
         fetch(`/api/categories/${params.categoryId}`)
       ])
 
@@ -101,7 +115,13 @@ export default function SpreadsheetPage() {
 
       if (allocRes.ok) {
         const allocationsData = await allocRes.json()
+        // Load ALL allocations (no filtering by period)
         setAllocations(allocationsData)
+      }
+
+      if (periodsRes.ok) {
+        const { periods } = await periodsRes.json()
+        setAvailablePeriods(periods)
       }
 
       if (categoryRes.ok) {
@@ -140,15 +160,24 @@ export default function SpreadsheetPage() {
         if (!nodeMap.has(path)) {
           const parts = path.split('/')
           const name = parts[parts.length - 1]
-          const allocation = allocations.find(a => a.hierarchyPath === path)
+
+          // Build period data map for this node
+          const periodData = new Map<string | null, PeriodData>()
+          const nodeAllocations = allocations.filter(a => a.hierarchyPath === path)
+
+          for (const alloc of nodeAllocations) {
+            periodData.set(alloc.period || null, {
+              percentage: alloc.percentage,
+              amount: parseInt(alloc.amount),
+              quantity: alloc.quantity
+            })
+          }
 
           const node: HierarchyNode = {
             path,
             name,
             level,
-            percentage: allocation?.percentage || 0,
-            amount: allocation ? parseInt(allocation.amount) : 0,
-            quantity: allocation?.quantity || 0,
+            periodData,
             children: []
           }
 
@@ -172,16 +201,24 @@ export default function SpreadsheetPage() {
       const skuLevel = session.hierarchyDefinitions.length + 1
 
       if (!nodeMap.has(skuPath)) {
-        const allocation = allocations.find(a => a.hierarchyPath === skuPath)
+        // Build period data map for SKU
+        const periodData = new Map<string | null, PeriodData>()
+        const skuAllocations = allocations.filter(a => a.hierarchyPath === skuPath)
+
+        for (const alloc of skuAllocations) {
+          periodData.set(alloc.period || null, {
+            percentage: alloc.percentage,
+            amount: parseInt(alloc.amount),
+            quantity: alloc.quantity
+          })
+        }
 
         const skuNode: HierarchyNode = {
           path: skuPath,
           name: sku.skuCode,
           level: skuLevel,
-          percentage: allocation?.percentage || 0,
-          amount: allocation ? parseInt(allocation.amount) : 0,
           unitPrice: sku.unitPrice,
-          quantity: allocation?.quantity || 0,
+          periodData,
           children: []
         }
 
@@ -281,10 +318,10 @@ export default function SpreadsheetPage() {
     return parseInt(session.totalBudget)
   }
 
-  const updateAllocation = (path: string, percentage: number) => {
+  const updateAllocation = (path: string, period: string | null, percentage: number) => {
     if (!session) return
 
-    const parentAmount = getParentAmount(path)
+    const parentAmount = getParentAmount(path, allocations)
     const amount = Math.floor(parentAmount * (percentage / 100))
 
     const pathLevel = path.split('/').length
@@ -303,7 +340,7 @@ export default function SpreadsheetPage() {
     const totalUnitPrice = relatedSkus.reduce((sum, sku) => sum + sku.unitPrice, 0)
     const quantity = totalUnitPrice > 0 ? Math.floor(amount / totalUnitPrice) : 0
 
-    const existingIndex = allocations.findIndex(a => a.hierarchyPath === path)
+    const existingIndex = allocations.findIndex(a => a.hierarchyPath === path && a.period === period)
     let updated: Allocation[]
 
     if (existingIndex >= 0) {
@@ -320,16 +357,17 @@ export default function SpreadsheetPage() {
         level: pathLevel,
         percentage,
         amount: amount.toString(),
-        quantity
+        quantity,
+        period
       }]
     }
 
     setAllocations(updated)
-    setHierarchyTree(buildHierarchyTree())
   }
 
   const saveAllocations = async () => {
     try {
+      // Save all allocations (all periods at once)
       const response = await fetch(`/api/sessions/${params.sessionId}/allocations`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -420,109 +458,237 @@ export default function SpreadsheetPage() {
     }
   }
 
-  const exportToCSV = () => {
+  // Period management functions
+  const addPeriod = async () => {
+    if (!periodModalValue || periodModalValue.trim() === '') {
+      alert('期間名を入力してください')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/sessions/${params.sessionId}/periods`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          period: periodModalValue.trim(),
+          copyFrom: periodModalCopyFrom
+        })
+      })
+
+      if (response.ok) {
+        alert('期間を追加しました')
+        setShowPeriodModal(false)
+        setPeriodModalValue('')
+        setPeriodModalCopyFrom(null)
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(`期間の追加に失敗しました: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error adding period:', error)
+      alert('期間の追加に失敗しました')
+    }
+  }
+
+  const renamePeriod = async () => {
+    if (!periodModalNewValue || periodModalNewValue.trim() === '') {
+      alert('新しい期間名を入力してください')
+      return
+    }
+
+    try {
+      const encodedPeriod = encodeURIComponent(periodModalValue === null ? 'null' : periodModalValue)
+      const response = await fetch(`/api/sessions/${params.sessionId}/periods/${encodedPeriod}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPeriod: periodModalNewValue.trim() })
+      })
+
+      if (response.ok) {
+        alert('期間名を変更しました')
+        setShowPeriodModal(false)
+        setPeriodModalValue('')
+        setPeriodModalNewValue('')
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(`期間名の変更に失敗しました: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error renaming period:', error)
+      alert('期間名の変更に失敗しました')
+    }
+  }
+
+  const deletePeriod = async () => {
+    if (!confirm(`本当に期間「${periodModalValue === null ? 'デフォルト' : periodModalValue}」を削除しますか？この期間の全ての配分データが削除されます。`)) {
+      return
+    }
+
+    try {
+      const encodedPeriod = encodeURIComponent(periodModalValue === null ? 'null' : periodModalValue)
+      const response = await fetch(`/api/sessions/${params.sessionId}/periods/${encodedPeriod}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        alert('期間を削除しました')
+        setShowPeriodModal(false)
+        setPeriodModalValue('')
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(`期間の削除に失敗しました: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error deleting period:', error)
+      alert('期間の削除に失敗しました')
+    }
+  }
+
+  const handlePeriodModalSubmit = () => {
+    if (periodModalMode === 'add') {
+      addPeriod()
+    } else if (periodModalMode === 'rename') {
+      renamePeriod()
+    } else if (periodModalMode === 'delete') {
+      deletePeriod()
+    }
+  }
+
+  const exportToCSV = async () => {
     if (!session || skuData.length === 0) {
       alert('エクスポートするデータがありません')
       return
     }
 
-    // 階層カラム名を取得
-    const hierarchyColumns = session.hierarchyDefinitions.map(def => def.columnName)
+    try {
+      // Fetch all allocations for all periods
+      const allocRes = await fetch(`/api/sessions/${params.sessionId}/allocations`)
+      if (!allocRes.ok) {
+        alert('配分データの取得に失敗しました')
+        return
+      }
+      const allAllocations = await allocRes.json()
 
-    // CSVヘッダーを作成
-    const headers = [...hierarchyColumns, 'sku_code', '振り分け割合(%)', 'unitprice', '割り振り金額', '数量']
+      // 階層カラム名を取得
+      const hierarchyColumns = session.hierarchyDefinitions.map(def => def.columnName)
 
-    // CSVデータを作成
-    const rows: string[][] = []
-
-    skuData.forEach(sku => {
-      // 各階層の値を取得
-      const hierarchyValues: string[] = []
-      hierarchyColumns.forEach(colName => {
-        hierarchyValues.push(sku.hierarchyValues[colName] || '')
+      // Sort periods: null (default) first, then alphabetically
+      const sortedPeriods = [...availablePeriods].sort((a, b) => {
+        if (a === null) return -1
+        if (b === null) return 1
+        return a.localeCompare(b)
       })
 
-      // SKUレベルのパスを構築
-      const parentPath = buildHierarchyPath(sku, session.hierarchyDefinitions, session.hierarchyDefinitions.length)
-      const skuPath = parentPath ? `${parentPath}/${sku.skuCode}` : sku.skuCode
+      // CSVヘッダーを作成（期間ごとに列を追加）
+      const periodHeaders = sortedPeriods.map(p =>
+        p === null ? 'デフォルト(%)' : `${p}(%)`
+      )
+      const headers = [...hierarchyColumns, 'sku_code', ...periodHeaders, 'unitprice', '合計金額', '合計数量']
 
-      // 全階層の割合を掛け算して最終的な割合を計算
-      let finalPercentage: number | null = null
-      let finalAmount: string = ''
-      let finalQuantity: string = ''
+      // CSVデータを作成
+      const rows: string[][] = []
 
-      // SKUレベルの配分情報を取得
-      const skuAllocation = allocations.find(a => a.hierarchyPath === skuPath)
+      skuData.forEach(sku => {
+        // 各階層の値を取得
+        const hierarchyValues: string[] = []
+        hierarchyColumns.forEach(colName => {
+          hierarchyValues.push(sku.hierarchyValues[colName] || '')
+        })
 
-      if (skuAllocation && skuAllocation.percentage > 0) {
-        // SKUまでのパスの各階層の割合を取得
-        const pathParts = skuPath.split('/')
-        let cumulativePercentage = 1.0 // 100%から開始
+        // SKUレベルのパスを構築
+        const parentPath = buildHierarchyPath(sku, session.hierarchyDefinitions, session.hierarchyDefinitions.length)
+        const skuPath = parentPath ? `${parentPath}/${sku.skuCode}` : sku.skuCode
 
-        // 各階層レベルの割合を掛け算
-        for (let level = 1; level <= pathParts.length; level++) {
-          const levelPath = pathParts.slice(0, level).join('/')
-          const levelAllocation = allocations.find(a => a.hierarchyPath === levelPath)
+        // 各期間ごとの累積割合を計算
+        const periodPercentages: string[] = []
+        let totalAmount = 0
+        let totalQuantity = 0
 
-          if (levelAllocation && levelAllocation.percentage > 0) {
-            cumulativePercentage *= (levelAllocation.percentage / 100)
-          } else {
-            // 配分が設定されていない階層がある場合は、最終的な割合も未設定
-            cumulativePercentage = 0
-            break
+        sortedPeriods.forEach(period => {
+          // この期間の配分データをフィルタ
+          const periodAllocations = allAllocations.filter((a: Allocation & { period?: string | null }) =>
+            a.period === period
+          )
+
+          // SKUまでのパスの各階層の割合を取得
+          const pathParts = skuPath.split('/')
+          let cumulativePercentage = 1.0 // 100%から開始
+          let hasAllocation = false
+
+          // 各階層レベルの割合を掛け算
+          for (let level = 1; level <= pathParts.length; level++) {
+            const levelPath = pathParts.slice(0, level).join('/')
+            const levelAllocation = periodAllocations.find(a => a.hierarchyPath === levelPath)
+
+            if (levelAllocation && levelAllocation.percentage > 0) {
+              cumulativePercentage *= (levelAllocation.percentage / 100)
+              hasAllocation = true
+            } else if (level === pathParts.length && !hasAllocation) {
+              // SKUレベルで配分がない場合
+              cumulativePercentage = 0
+              break
+            }
           }
-        }
 
-        if (cumulativePercentage > 0) {
-          finalPercentage = cumulativePercentage * 100 // パーセント表記に戻す
-          // 最終的な金額 = 総予算 × 最終的な割合
-          const totalBudget = parseInt(session.totalBudget)
-          const calculatedAmount = Math.floor(totalBudget * cumulativePercentage)
-          finalAmount = calculatedAmount.toString()
+          if (cumulativePercentage > 0 && hasAllocation) {
+            const finalPercentage = cumulativePercentage * 100
+            periodPercentages.push(finalPercentage.toFixed(4))
 
-          // 数量 = 金額 / 単価
-          finalQuantity = sku.unitPrice > 0 ? Math.floor(calculatedAmount / sku.unitPrice).toString() : '0'
-        }
-      }
+            // 合計金額と数量を計算
+            const totalBudget = parseInt(session.totalBudget)
+            const calculatedAmount = Math.floor(totalBudget * cumulativePercentage)
+            totalAmount += calculatedAmount
+            totalQuantity += sku.unitPrice > 0 ? Math.floor(calculatedAmount / sku.unitPrice) : 0
+          } else {
+            periodPercentages.push('')
+          }
+        })
 
-      // 行データを作成（未入力は空欄、0は"0"として出力）
-      const row = [
-        ...hierarchyValues,
-        sku.skuCode,
-        finalPercentage !== null && finalPercentage > 0 ? finalPercentage.toFixed(4) : '',
-        sku.unitPrice.toString(),
-        finalAmount,
-        finalQuantity
-      ]
+        // 行データを作成
+        const row = [
+          ...hierarchyValues,
+          sku.skuCode,
+          ...periodPercentages,
+          sku.unitPrice.toString(),
+          totalAmount > 0 ? totalAmount.toString() : '',
+          totalQuantity > 0 ? totalQuantity.toString() : ''
+        ]
 
-      rows.push(row)
-    })
+        rows.push(row)
+      })
 
-    // CSVテキストを生成
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => {
-        // カンマやダブルクォートを含む場合はエスケープ
-        if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
-          return `"${cell.replace(/"/g, '""')}"`
-        }
-        return cell
-      }).join(','))
-    ].join('\n')
+      // CSVテキストを生成
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => {
+          // カンマやダブルクォートを含む場合はエスケープ
+          if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+            return `"${cell.replace(/"/g, '""')}"`
+          }
+          return cell
+        }).join(','))
+      ].join('\n')
 
-    // BOMを追加してExcelで正しく開けるようにする
-    const bom = '\uFEFF'
-    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
+      // BOMを追加してExcelで正しく開けるようにする
+      const bom = '\uFEFF'
+      const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' })
 
-    // ダウンロードリンクを作成
-    const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', `allocation_${session.name}_${new Date().toISOString().slice(0, 10)}.csv`)
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+      // ダウンロードリンクを作成
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', `allocation_${session.name}_${new Date().toISOString().slice(0, 10)}.csv`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (error) {
+      console.error('Error exporting CSV:', error)
+      alert('CSV出力に失敗しました')
+    }
   }
 
   const filterNodes = (nodes: HierarchyNode[], query: string): HierarchyNode[] => {
@@ -550,11 +716,14 @@ export default function SpreadsheetPage() {
     { bg: 'bg-teal-50', hover: 'hover:bg-teal-100' }       // Level 8+
   ]
 
-  const getSiblingsTotal = (node: HierarchyNode): number => {
+  const getSiblingsTotal = (node: HierarchyNode, period: string | null): number => {
     const pathParts = node.path.split('/')
     if (pathParts.length === 1) {
       // Level 1: sum all level 1 nodes
-      return hierarchyTree.reduce((sum, n) => sum + n.percentage, 0)
+      return hierarchyTree.reduce((sum, n) => {
+        const periodData = n.periodData.get(period)
+        return sum + (periodData?.percentage || 0)
+      }, 0)
     }
 
     // Find siblings by looking for nodes with same parent
@@ -573,7 +742,10 @@ export default function SpreadsheetPage() {
     }
 
     const siblings = findSiblings(hierarchyTree)
-    return siblings.reduce((sum, n) => sum + n.percentage, 0)
+    return siblings.reduce((sum, n) => {
+      const periodData = n.periodData.get(period)
+      return sum + (periodData?.percentage || 0)
+    }, 0)
   }
 
   // Helper function to get parent path
@@ -598,22 +770,6 @@ export default function SpreadsheetPage() {
   const renderHierarchyNodes = (nodes: HierarchyNode[], depth = 0): JSX.Element[] => {
     return nodes.flatMap((node, index) => {
       const colors = levelColorPalette[(node.level - 1) % levelColorPalette.length]
-      const siblingsTotal = getSiblingsTotal(node)
-      const remaining = 100 - siblingsTotal
-      const isOverLimit = siblingsTotal > 100
-
-      // Check if this node should be highlighted (is sibling of focused node)
-      const isFocusedSibling = focusedPath && areSiblings(node.path, focusedPath)
-
-      // Determine row background color
-      let rowBgClass = colors.bg
-      let rowHoverClass = colors.hover
-
-      if (isFocusedSibling) {
-        // Darker highlight for focused siblings
-        rowBgClass = 'bg-blue-200 ring-2 ring-blue-400'
-        rowHoverClass = 'hover:bg-blue-300'
-      }
 
       // Handle row click to toggle group
       const handleRowClick = (e: React.MouseEvent) => {
@@ -630,10 +786,11 @@ export default function SpreadsheetPage() {
       return (
         <Fragment key={node.path}>
           <tr
-            className={`border-b border-gray-200 ${rowBgClass} ${rowHoverClass} transition-colors duration-150 ${node.children.length > 0 ? 'cursor-pointer' : ''}`}
+            className={`border-b border-gray-200 ${colors.bg} ${colors.hover} transition-colors duration-150 ${node.children.length > 0 ? 'cursor-pointer' : ''}`}
             onClick={handleRowClick}
           >
-            <td className={`py-2 px-4 sticky left-0 ${rowBgClass} z-10`} style={{ paddingLeft: `${depth * 24 + 16}px` }}>
+            {/* 階層名 */}
+            <td className={`py-2 px-4 sticky left-0 ${colors.bg} z-10`} style={{ paddingLeft: `${depth * 24 + 16}px` }}>
               <div className="flex items-center gap-2">
                 {node.children.length > 0 && (
                   <button
@@ -651,48 +808,67 @@ export default function SpreadsheetPage() {
                 <span className="text-gray-900 font-medium">{node.name}</span>
               </div>
             </td>
+
+            {/* レベル */}
             <td className="text-center py-2 px-4 text-gray-600">
               Level {node.level}
             </td>
+
+            {/* 単価 */}
             <td className="text-right py-2 px-4 text-gray-900">
               {node.unitPrice !== undefined ? `¥${node.unitPrice.toLocaleString()}` : ''}
             </td>
-            <td className="text-right py-2 px-4">
-              <div className="flex flex-col items-end gap-1">
-                {session?.category?.userId === authSession?.user?.id ? (
-                  <input
-                    type="number"
-                    value={node.percentage || ''}
-                    onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
-                    onFocus={() => setFocusedPath(node.path)}
-                    onBlur={() => setFocusedPath(null)}
-                    className={`w-20 px-2 py-1 border rounded text-right text-gray-900 ${
-                      isOverLimit ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                    }`}
-                    min="0"
-                    max="100"
-                    step="0.01"
-                  />
-                ) : (
-                  <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
-                )}
-                <div className={`${isFocusedSibling ? 'text-sm font-bold' : 'text-xs'}`}>
-                  {isOverLimit ? (
-                    <span className="text-red-600 font-medium">超過: {Math.abs(remaining).toFixed(1)}%</span>
-                  ) : (
-                    <span className={`${isFocusedSibling ? 'text-blue-800' : 'text-gray-500'}`}>
-                      残り: {remaining.toFixed(1)}%
-                    </span>
-                  )}
-                </div>
-              </div>
-            </td>
-            <td className="text-right py-2 px-4 text-gray-900">
-              ¥{node.amount.toLocaleString()}
-            </td>
-            <td className="text-right py-2 px-4 text-gray-900">
-              {node.quantity}
-            </td>
+
+            {/* 各期間の割合（グループ化） */}
+            {availablePeriods.map(period => {
+              const periodData = node.periodData.get(period)
+              const percentage = periodData?.percentage || 0
+
+              const siblingsTotal = getSiblingsTotal(node, period)
+              const remaining = 100 - siblingsTotal
+              const isOverLimit = siblingsTotal > 100
+
+              return (
+                <td key={`${period === null ? 'null' : period}-pct`} className="text-right py-2 px-4">
+                  <div className="flex flex-col items-end gap-1">
+                    {session?.category?.userId === authSession?.user?.id ? (
+                      <input
+                        type="number"
+                        value={percentage || ''}
+                        onChange={(e) => updateAllocation(node.path, period, parseFloat(e.target.value) || 0)}
+                        className={`w-20 px-2 py-1 border rounded text-right text-gray-900 ${
+                          isOverLimit ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                        }`}
+                        min="0"
+                        max="100"
+                        step="0.01"
+                      />
+                    ) : (
+                      <span className="text-gray-900">{percentage.toFixed(2)}</span>
+                    )}
+                    <div className="text-xs">
+                      {isOverLimit ? (
+                        <span className="text-red-600 font-medium">超過: {Math.abs(remaining).toFixed(1)}%</span>
+                      ) : (
+                        <span className="text-gray-500">残り: {remaining.toFixed(1)}%</span>
+                      )}
+                    </div>
+                  </div>
+                </td>
+              )
+            })}
+
+            {/* 各期間の金額（グループ化） */}
+            {availablePeriods.map(period => {
+              const periodData = node.periodData.get(period)
+              const amount = periodData?.amount || 0
+
+              return (
+                <td key={`${period === null ? 'null' : period}-amt`} className="text-right py-2 px-4 text-gray-900">
+                  {amount > 0 ? `¥${amount.toLocaleString()}` : ''}
+                </td>
+              )
+            })}
           </tr>
           {node.children.length > 0 && expandedGroups.has(node.path) && renderHierarchyNodes(node.children, depth + 1)}
         </Fragment>
@@ -789,17 +965,100 @@ export default function SpreadsheetPage() {
                       </button>
                     )}
                   </div>
+
+                  {/* Period Management */}
+                  {session.category?.userId === authSession?.user?.id && (
+                    <div className="flex items-center gap-2 border-l pl-4">
+                      <Calendar size={16} className="text-gray-600" />
+                      <span className="text-sm text-gray-600">期間管理:</span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            setPeriodModalMode('add')
+                            setPeriodModalValue('')
+                            setPeriodModalCopyFrom(availablePeriods[0] || null)
+                            setShowPeriodModal(true)
+                          }}
+                          className="p-1 text-green-600 hover:bg-green-50 rounded"
+                          title="期間を追加"
+                        >
+                          <Plus size={16} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (availablePeriods.length === 0) {
+                              alert('変更する期間がありません')
+                              return
+                            }
+                            setPeriodModalMode('rename')
+                            setPeriodModalValue(availablePeriods[0])
+                            setPeriodModalNewValue(availablePeriods[0] === null ? '' : availablePeriods[0] || '')
+                            setShowPeriodModal(true)
+                          }}
+                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                          title="期間名を変更"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (availablePeriods.length === 0) {
+                              alert('削除する期間がありません')
+                              return
+                            }
+                            setPeriodModalMode('delete')
+                            setPeriodModalValue(availablePeriods[0])
+                            setShowPeriodModal(true)
+                          }}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded"
+                          title="期間を削除"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="text-sm text-gray-600">
                     作成者: {session.category?.user?.name || session.category?.user?.email || '不明'}
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-sm ${
-                    session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                    session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {session.status === 'confirmed' ? '確定' :
-                     session.status === 'archived' ? 'アーカイブ' : '作業中'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-full text-sm ${
+                      session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                      session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {session.status === 'confirmed' ? '確定' :
+                       session.status === 'archived' ? 'アーカイブ' : '作業中'}
+                    </span>
+                    {session.category?.userId === authSession?.user?.id && session.status !== 'draft' && (
+                      <button
+                        onClick={async () => {
+                          if (confirm('ステータスを「作業中」に戻しますか？')) {
+                            try {
+                              const response = await fetch(`/api/sessions/${params.sessionId}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ status: 'draft' })
+                              })
+                              if (response.ok) {
+                                loadData()
+                                alert('ステータスを「作業中」に変更しました')
+                              } else {
+                                alert('ステータスの変更に失敗しました')
+                              }
+                            } catch (error) {
+                              console.error('Error updating status:', error)
+                              alert('ステータスの変更に失敗しました')
+                            }
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        作業中に戻す
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -906,21 +1165,24 @@ export default function SpreadsheetPage() {
                   <th className="text-right py-3 px-4 font-semibold text-gray-900">
                     単価
                   </th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-900">
-                    割合(%)
-                  </th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-900">
-                    金額
-                  </th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-900">
-                    数量
-                  </th>
+                  {/* Period percentage columns */}
+                  {availablePeriods.map(period => (
+                    <th key={`${period === null ? 'null' : period}-pct`} className="text-right py-3 px-4 font-semibold text-gray-900">
+                      {period === null ? 'デフォルト' : period}(%)
+                    </th>
+                  ))}
+                  {/* Period amount columns */}
+                  {availablePeriods.map(period => (
+                    <th key={`${period === null ? 'null' : period}-amt`} className="text-right py-3 px-4 font-semibold text-gray-900">
+                      {period === null ? 'デフォルト' : period}(円)
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {filteredTree.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-gray-500">
+                    <td colSpan={3 + availablePeriods.length * 2} className="text-center py-8 text-gray-500">
                       {searchQuery ? '検索結果がありません' : 'データがありません'}
                     </td>
                   </tr>
@@ -1040,6 +1302,134 @@ export default function SpreadsheetPage() {
                 onClick={() => {
                   setShowDeleteCategoryModal(false)
                   setDeleteConfirmText('')
+                }}
+                className="btn btn-secondary flex-1"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Period Management Modal */}
+      {showPeriodModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">
+              {periodModalMode === 'add' && '期間を追加'}
+              {periodModalMode === 'rename' && '期間名を変更'}
+              {periodModalMode === 'delete' && '期間を削除'}
+            </h2>
+
+            {periodModalMode === 'add' && (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">期間名</label>
+                  <input
+                    type="text"
+                    value={periodModalValue}
+                    onChange={(e) => setPeriodModalValue(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="例: 2024-05, Q1, 春"
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">コピー元期間（オプション）</label>
+                  <select
+                    value={periodModalCopyFrom === null ? 'null' : periodModalCopyFrom || ''}
+                    onChange={(e) => setPeriodModalCopyFrom(e.target.value === 'null' ? null : e.target.value === '' ? null : e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  >
+                    <option value="">コピーしない（新規作成）</option>
+                    {availablePeriods.map(period => (
+                      <option key={period === null ? 'null' : period} value={period === null ? 'null' : period}>
+                        {period === null ? 'デフォルト' : period}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    既存の期間から配分データをコピーして新しい期間を作成できます
+                  </p>
+                </div>
+              </>
+            )}
+
+            {periodModalMode === 'rename' && (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">対象期間を選択</label>
+                  <select
+                    value={periodModalValue === null ? 'null' : periodModalValue || ''}
+                    onChange={(e) => {
+                      const val = e.target.value === 'null' ? null : e.target.value
+                      setPeriodModalValue(val)
+                      setPeriodModalNewValue(val === null ? '' : val)
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  >
+                    {availablePeriods.map(period => (
+                      <option key={period === null ? 'null' : period} value={period === null ? 'null' : period}>
+                        {period === null ? 'デフォルト' : period}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">新しい期間名</label>
+                  <input
+                    type="text"
+                    value={periodModalNewValue}
+                    onChange={(e) => setPeriodModalNewValue(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="新しい期間名"
+                  />
+                </div>
+              </>
+            )}
+
+            {periodModalMode === 'delete' && (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-900 mb-2">削除する期間を選択</label>
+                  <select
+                    value={periodModalValue === null ? 'null' : periodModalValue || ''}
+                    onChange={(e) => setPeriodModalValue(e.target.value === 'null' ? null : e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  >
+                    {availablePeriods.map(period => (
+                      <option key={period === null ? 'null' : period} value={period === null ? 'null' : period}>
+                        {period === null ? 'デフォルト' : period}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-gray-900 mb-4">
+                  期間「{periodModalValue === null ? 'デフォルト' : periodModalValue}」を削除しますか？
+                  この期間の全ての配分データが削除されます。この操作は元に戻せません。
+                </p>
+              </>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={handlePeriodModalSubmit}
+                className={`btn flex-1 ${
+                  periodModalMode === 'delete'
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'btn-primary'
+                }`}
+              >
+                {periodModalMode === 'add' && '追加'}
+                {periodModalMode === 'rename' && '変更'}
+                {periodModalMode === 'delete' && '削除'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowPeriodModal(false)
+                  setPeriodModalValue('')
+                  setPeriodModalNewValue('')
+                  setPeriodModalCopyFrom(null)
                 }}
                 className="btn btn-secondary flex-1"
               >
