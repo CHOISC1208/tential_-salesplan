@@ -3,7 +3,8 @@
 import { useEffect, useState, Fragment } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { ArrowLeft, Save, ChevronDown, ChevronRight, ChevronUp, Download, Calendar, Plus, Edit2, Trash2 } from 'lucide-react'
+import { ArrowLeft, Save, ChevronDown, ChevronRight, ChevronUp, Download, Calendar, Plus, Edit2, Trash2, Upload } from 'lucide-react'
+import Papa from 'papaparse'
 
 interface Session {
   id: string
@@ -76,6 +77,7 @@ export default function SpreadsheetPage() {
   const [showDeleteSessionModal, setShowDeleteSessionModal] = useState(false)
   const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [showUploadModal, setShowUploadModal] = useState(false)
 
   // Period management states
   const [availablePeriods, setAvailablePeriods] = useState<Array<string | null>>([])
@@ -691,6 +693,58 @@ export default function SpreadsheetPage() {
     }
   }
 
+  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    Papa.parse(file, {
+      header: true,
+      complete: async (results) => {
+        const data = results.data as any[]
+        if (data.length === 0) return
+
+        // Extract hierarchy columns (all columns except sku_code and unitprice)
+        const allColumns = Object.keys(data[0])
+        const hierarchyColumns = allColumns.filter(
+          col => col !== 'sku_code' && col !== 'unitprice'
+        )
+
+        // Transform data
+        const skuData = data
+          .filter(row => row.sku_code && row.unitprice)
+          .map(row => {
+            const hierarchyValues: Record<string, string> = {}
+            hierarchyColumns.forEach(col => {
+              if (row[col]) {
+                hierarchyValues[col] = row[col]
+              }
+            })
+
+            return {
+              skuCode: row.sku_code,
+              unitPrice: parseInt(row.unitprice),
+              hierarchyValues
+            }
+          })
+
+        try {
+          const response = await fetch(`/api/sessions/${params.sessionId}/import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ skuData, hierarchyColumns })
+          })
+
+          if (response.ok) {
+            setShowUploadModal(false)
+            loadData()
+          }
+        } catch (error) {
+          console.error('Error uploading CSV:', error)
+        }
+      }
+    })
+  }
+
   const filterNodes = (nodes: HierarchyNode[], query: string): HierarchyNode[] => {
     if (!query) return nodes
 
@@ -1057,6 +1111,10 @@ export default function SpreadsheetPage() {
               </div>
             </div>
             <div className="flex gap-2">
+              <button onClick={() => setShowUploadModal(true)} className="btn btn-primary flex items-center gap-2">
+                <Upload size={20} />
+                CSV取り込み
+              </button>
               {skuData.length > 0 && (
                 <button onClick={exportToCSV} className="btn bg-gray-600 text-white hover:bg-gray-700 flex items-center gap-2">
                   <Download size={20} />
@@ -1430,6 +1488,34 @@ export default function SpreadsheetPage() {
                 キャンセル
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-gray-900">CSV取り込み</h2>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-900 mb-2">CSVファイル</label>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleCSVUpload}
+                className="w-full"
+              />
+              <p className="text-sm text-gray-600 mt-2">
+                必須カラム: sku_code, unitprice<br />
+                その他のカラムは自動的に階層として認識されます
+              </p>
+            </div>
+            <button
+              onClick={() => setShowUploadModal(false)}
+              className="btn btn-secondary w-full"
+            >
+              キャンセル
+            </button>
           </div>
         </div>
       )}
