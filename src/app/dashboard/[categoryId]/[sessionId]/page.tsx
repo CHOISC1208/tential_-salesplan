@@ -959,6 +959,23 @@ export default function SessionPage() {
                   </button>
                 </div>
                 <h1 className="text-3xl font-bold text-gray-900">{session.name}</h1>
+
+                {/* View Switcher */}
+                <div className="flex items-center gap-2 my-3">
+                  <button
+                    onClick={() => router.push(`/dashboard/${params.categoryId}/${params.sessionId}`)}
+                    className="px-4 py-2 rounded-lg font-medium bg-blue-600 text-white"
+                  >
+                    ステップビュー
+                  </button>
+                  <button
+                    onClick={() => router.push(`/dashboard/${params.categoryId}/${params.sessionId}/spreadsheet`)}
+                    className="px-4 py-2 rounded-lg font-medium bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  >
+                    ツリービュー
+                  </button>
+                </div>
+
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
                     <p className="text-gray-700">
@@ -1040,12 +1057,6 @@ export default function SessionPage() {
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-lg font-semibold text-gray-900">階層レベル選択</h3>
                   <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => router.push(`/dashboard/${params.categoryId}/${params.sessionId}/spreadsheet`)}
-                      className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
-                    >
-                      📊 スプレッドシートビュー（プロトタイプ）
-                    </button>
                     <input
                       type="text"
                       placeholder="検索..."
