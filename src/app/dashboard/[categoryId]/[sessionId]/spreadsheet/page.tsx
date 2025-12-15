@@ -5,7 +5,10 @@ import { useRouter, useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { ArrowLeft, Save } from 'lucide-react'
 import { AgGridReact } from 'ag-grid-react'
-import { ColDef, GridReadyEvent, CellValueChangedEvent } from 'ag-grid-community'
+import { ColDef, GridReadyEvent, CellValueChangedEvent, ModuleRegistry, AllCommunityModule } from 'ag-grid-community'
+
+// AG Grid モジュール登録
+ModuleRegistry.registerModules([AllCommunityModule])
 
 // AG Grid スタイル
 import 'ag-grid-community/styles/ag-grid.css'
