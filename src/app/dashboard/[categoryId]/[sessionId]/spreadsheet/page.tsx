@@ -347,59 +347,76 @@ export default function SpreadsheetPage() {
     }))
   }
 
-  const renderHierarchyNodes = (nodes: HierarchyNode[], depth = 0): JSX.Element[] => {
-    return nodes.flatMap(node => (
-      <Fragment key={node.path}>
-        <tr className="border-b border-gray-200 hover:bg-gray-50">
-          <td className="py-2 px-4 sticky left-0 bg-white z-10" style={{ paddingLeft: `${depth * 24 + 16}px` }}>
-            <div className="flex items-center gap-2">
-              {node.children.length > 0 && (
-                <button
-                  onClick={() => toggleGroup(node.path)}
-                  className="text-gray-600 hover:text-gray-900"
-                >
-                  {expandedGroups.has(node.path) ? (
-                    <ChevronDown size={16} />
-                  ) : (
-                    <ChevronRight size={16} />
-                  )}
-                </button>
+  // Color palette for top-level groups
+  const colorPalette = [
+    { bg: 'bg-blue-50', hover: 'hover:bg-blue-100' },
+    { bg: 'bg-green-50', hover: 'hover:bg-green-100' },
+    { bg: 'bg-yellow-50', hover: 'hover:bg-yellow-100' },
+    { bg: 'bg-purple-50', hover: 'hover:bg-purple-100' },
+    { bg: 'bg-pink-50', hover: 'hover:bg-pink-100' },
+    { bg: 'bg-indigo-50', hover: 'hover:bg-indigo-100' },
+    { bg: 'bg-orange-50', hover: 'hover:bg-orange-100' },
+    { bg: 'bg-teal-50', hover: 'hover:bg-teal-100' }
+  ]
+
+  const renderHierarchyNodes = (nodes: HierarchyNode[], depth = 0, rootIndex = 0): JSX.Element[] => {
+    return nodes.flatMap((node, index) => {
+      const currentRootIndex = depth === 0 ? index : rootIndex
+      const colors = colorPalette[currentRootIndex % colorPalette.length]
+
+      return (
+        <Fragment key={node.path}>
+          <tr className={`border-b border-gray-200 ${colors.bg} ${colors.hover}`}>
+            <td className={`py-2 px-4 sticky left-0 ${colors.bg} z-10`} style={{ paddingLeft: `${depth * 24 + 16}px` }}>
+              <div className="flex items-center gap-2">
+                {node.children.length > 0 && (
+                  <button
+                    onClick={() => toggleGroup(node.path)}
+                    className="text-gray-600 hover:text-gray-900"
+                  >
+                    {expandedGroups.has(node.path) ? (
+                      <ChevronDown size={16} />
+                    ) : (
+                      <ChevronRight size={16} />
+                    )}
+                  </button>
+                )}
+                {node.children.length === 0 && <span className="w-4" />}
+                <span className="text-gray-900 font-medium">{node.name}</span>
+              </div>
+            </td>
+            <td className="text-center py-2 px-4 text-gray-600">
+              Level {node.level}
+            </td>
+            <td className="text-right py-2 px-4 text-gray-900">
+              {node.unitPrice !== undefined ? `¥${node.unitPrice.toLocaleString()}` : ''}
+            </td>
+            <td className="text-right py-2 px-4">
+              {session?.category?.userId === authSession?.user?.id ? (
+                <input
+                  type="number"
+                  value={node.percentage || ''}
+                  onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
+                  className="w-20 px-2 py-1 border border-gray-300 rounded text-right text-gray-900"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                />
+              ) : (
+                <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
               )}
-              {node.children.length === 0 && <span className="w-4" />}
-              <span className="text-gray-900 font-medium">{node.name}</span>
-            </div>
-          </td>
-          <td className="text-center py-2 px-4 text-gray-600">
-            Level {node.level}
-          </td>
-          <td className="text-right py-2 px-4 text-gray-900">
-            {node.unitPrice !== undefined ? `¥${node.unitPrice.toLocaleString()}` : ''}
-          </td>
-          <td className="text-right py-2 px-4">
-            {session?.category?.userId === authSession?.user?.id ? (
-              <input
-                type="number"
-                value={node.percentage || ''}
-                onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
-                className="w-20 px-2 py-1 border border-gray-300 rounded text-right text-gray-900"
-                min="0"
-                max="100"
-                step="0.01"
-              />
-            ) : (
-              <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
-            )}
-          </td>
-          <td className="text-right py-2 px-4 text-gray-900">
-            ¥{node.amount.toLocaleString()}
-          </td>
-          <td className="text-right py-2 px-4 text-gray-900">
-            {node.quantity}
-          </td>
-        </tr>
-        {node.children.length > 0 && expandedGroups.has(node.path) && renderHierarchyNodes(node.children, depth + 1)}
-      </Fragment>
-    ))
+            </td>
+            <td className="text-right py-2 px-4 text-gray-900">
+              ¥{node.amount.toLocaleString()}
+            </td>
+            <td className="text-right py-2 px-4 text-gray-900">
+              {node.quantity}
+            </td>
+          </tr>
+          {node.children.length > 0 && expandedGroups.has(node.path) && renderHierarchyNodes(node.children, depth + 1, currentRootIndex)}
+        </Fragment>
+      )
+    })
   }
 
   if (status === 'loading' || loading) {
