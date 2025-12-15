@@ -64,6 +64,8 @@ export default function SpreadsheetPage() {
   const [hierarchyTree, setHierarchyTree] = useState<HierarchyNode[]>([])
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [focusedPath, setFocusedPath] = useState<string | null>(null)
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -385,6 +387,25 @@ export default function SpreadsheetPage() {
     return siblings.reduce((sum, n) => sum + n.percentage, 0)
   }
 
+  // Helper function to get parent path
+  const getParentPath = (path: string): string | null => {
+    const pathParts = path.split('/')
+    if (pathParts.length === 1) return null // Top level, no parent
+    return pathParts.slice(0, -1).join('/')
+  }
+
+  // Helper function to check if two nodes are siblings
+  const areSiblings = (path1: string, path2: string): boolean => {
+    const parent1 = getParentPath(path1)
+    const parent2 = getParentPath(path2)
+
+    // Both at top level (parent is null)
+    if (parent1 === null && parent2 === null) return true
+
+    // Same parent path
+    return parent1 === parent2
+  }
+
   const renderHierarchyNodes = (nodes: HierarchyNode[], depth = 0): JSX.Element[] => {
     return nodes.flatMap((node, index) => {
       const colors = levelColorPalette[(node.level - 1) % levelColorPalette.length]
@@ -392,10 +413,28 @@ export default function SpreadsheetPage() {
       const remaining = 100 - siblingsTotal
       const isOverLimit = siblingsTotal > 100
 
+      // Check if this node should be highlighted (is sibling of focused or hovered node)
+      const isFocusedSibling = focusedPath && areSiblings(node.path, focusedPath)
+      const isHoveredSibling = hoveredPath && areSiblings(node.path, hoveredPath)
+
+      // Determine row background color with priority: focus > hover > default
+      let rowBgClass = colors.bg
+      let rowHoverClass = colors.hover
+
+      if (isFocusedSibling) {
+        // Darker highlight for focused siblings
+        rowBgClass = 'bg-blue-200 ring-2 ring-blue-400'
+        rowHoverClass = 'hover:bg-blue-300'
+      } else if (isHoveredSibling) {
+        // Lighter highlight for hovered siblings
+        rowBgClass = 'bg-blue-100'
+        rowHoverClass = 'hover:bg-blue-200'
+      }
+
       return (
         <Fragment key={node.path}>
-          <tr className={`border-b border-gray-200 ${colors.bg} ${colors.hover}`}>
-            <td className={`py-2 px-4 sticky left-0 ${colors.bg} z-10`} style={{ paddingLeft: `${depth * 24 + 16}px` }}>
+          <tr className={`border-b border-gray-200 ${rowBgClass} ${rowHoverClass} transition-colors duration-150`}>
+            <td className={`py-2 px-4 sticky left-0 ${rowBgClass} z-10`} style={{ paddingLeft: `${depth * 24 + 16}px` }}>
               <div className="flex items-center gap-2">
                 {node.children.length > 0 && (
                   <button
@@ -426,6 +465,10 @@ export default function SpreadsheetPage() {
                     type="number"
                     value={node.percentage || ''}
                     onChange={(e) => updateAllocation(node.path, parseFloat(e.target.value) || 0)}
+                    onFocus={() => setFocusedPath(node.path)}
+                    onBlur={() => setFocusedPath(null)}
+                    onMouseEnter={() => setHoveredPath(node.path)}
+                    onMouseLeave={() => setHoveredPath(null)}
                     className={`w-20 px-2 py-1 border rounded text-right text-gray-900 ${
                       isOverLimit ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
@@ -436,11 +479,13 @@ export default function SpreadsheetPage() {
                 ) : (
                   <span className="text-gray-900">{node.percentage.toFixed(2)}</span>
                 )}
-                <div className="text-xs">
+                <div className={`${(isFocusedSibling || isHoveredSibling) ? 'text-sm font-bold' : 'text-xs'}`}>
                   {isOverLimit ? (
                     <span className="text-red-600 font-medium">超過: {Math.abs(remaining).toFixed(1)}%</span>
                   ) : (
-                    <span className="text-gray-500">残り: {remaining.toFixed(1)}%</span>
+                    <span className={`${isFocusedSibling ? 'text-blue-800' : isHoveredSibling ? 'text-blue-700' : 'text-gray-500'}`}>
+                      残り: {remaining.toFixed(1)}%
+                    </span>
                   )}
                 </div>
               </div>
