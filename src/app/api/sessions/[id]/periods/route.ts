@@ -167,16 +167,50 @@ export async function POST(
         }
       }
 
-      // Create empty allocations for each hierarchy path
-      const allocations = Array.from(hierarchyPaths).map(path => ({
-        sessionId,
-        hierarchyPath: path,
-        level: path.split('/').length,
-        percentage: 0,
-        amount: BigInt(0),
-        quantity: 0,
-        period: period.trim(),
-      }));
+      // Count children for each parent path to determine which nodes should be 100%
+      const childrenCount = new Map<string, Set<string>>();
+
+      for (const path of hierarchyPaths) {
+        const parts = path.split('/');
+        if (parts.length > 1) {
+          const parentPath = parts.slice(0, -1).join('/');
+          if (!childrenCount.has(parentPath)) {
+            childrenCount.set(parentPath, new Set());
+          }
+          childrenCount.get(parentPath)!.add(path);
+        }
+      }
+
+      // Create allocations with automatic 100% for single children
+      const allocations = Array.from(hierarchyPaths).map(path => {
+        const parts = path.split('/');
+        let percentage = 0;
+
+        // If this node is the only child of its parent, set to 100%
+        if (parts.length > 1) {
+          const parentPath = parts.slice(0, -1).join('/');
+          const siblings = childrenCount.get(parentPath);
+          if (siblings && siblings.size === 1) {
+            percentage = 100;
+          }
+        } else {
+          // Top level - check if there's only one top-level item
+          const topLevelPaths = Array.from(hierarchyPaths).filter(p => p.split('/').length === 1);
+          if (topLevelPaths.length === 1) {
+            percentage = 100;
+          }
+        }
+
+        return {
+          sessionId,
+          hierarchyPath: path,
+          level: parts.length,
+          percentage,
+          amount: BigInt(0),
+          quantity: 0,
+          period: period.trim(),
+        };
+      });
 
       if (allocations.length > 0) {
         await prisma.allocation.createMany({
