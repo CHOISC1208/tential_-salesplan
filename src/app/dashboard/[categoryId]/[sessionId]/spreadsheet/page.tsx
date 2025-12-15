@@ -332,6 +332,7 @@ export default function SpreadsheetPage() {
               undoRedoCellEditing={true}
               onGridReady={onGridReady}
               onCellValueChanged={onCellValueChanged}
+              theme="legacy"
             />
           </div>
         </div>
