@@ -831,21 +831,17 @@ export default function SpreadsheetPage() {
               return (
                 <td key={`${period === null ? 'null' : period}-pct`} className="text-right py-2 px-4">
                   <div className="flex flex-col items-end gap-1">
-                    {session?.category?.userId === authSession?.user?.id ? (
-                      <input
-                        type="number"
-                        value={percentage || ''}
-                        onChange={(e) => updateAllocation(node.path, period, parseFloat(e.target.value) || 0)}
-                        className={`w-20 px-2 py-1 border rounded text-right text-gray-900 ${
-                          isOverLimit ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                        }`}
-                        min="0"
-                        max="100"
-                        step="0.01"
-                      />
-                    ) : (
-                      <span className="text-gray-900">{percentage.toFixed(2)}</span>
-                    )}
+                    <input
+                      type="number"
+                      value={percentage || ''}
+                      onChange={(e) => updateAllocation(node.path, period, parseFloat(e.target.value) || 0)}
+                      className={`w-20 px-2 py-1 border rounded text-right text-gray-900 ${
+                        isOverLimit ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      }`}
+                      min="0"
+                      max="100"
+                      step="0.01"
+                    />
                     <div className="text-xs">
                       {isOverLimit ? (
                         <span className="text-red-600 font-medium">超過: {Math.abs(remaining).toFixed(1)}%</span>
@@ -1023,52 +1019,44 @@ export default function SpreadsheetPage() {
                     作成者: {session.category?.user?.name || session.category?.user?.email || '不明'}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`px-3 py-1 rounded-full text-sm ${
-                      session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                      session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {session.status === 'confirmed' ? '確定' :
-                       session.status === 'archived' ? 'アーカイブ' : '作業中'}
-                    </span>
-                    {session.category?.userId === authSession?.user?.id && session.status !== 'draft' && (
-                      <button
-                        onClick={async () => {
-                          if (confirm('ステータスを「作業中」に戻しますか？')) {
-                            try {
-                              const response = await fetch(`/api/sessions/${params.sessionId}`, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ status: 'draft' })
-                              })
-                              if (response.ok) {
-                                loadData()
-                                alert('ステータスを「作業中」に変更しました')
-                              } else {
-                                alert('ステータスの変更に失敗しました')
-                              }
-                            } catch (error) {
-                              console.error('Error updating status:', error)
+                    <select
+                      value={session.status}
+                      onChange={async (e) => {
+                        const newStatus = e.target.value as 'draft' | 'confirmed' | 'archived'
+                        if (confirm(`ステータスを「${newStatus === 'draft' ? '作業中' : newStatus === 'confirmed' ? '確定' : 'アーカイブ'}」に変更しますか？`)) {
+                          try {
+                            const response = await fetch(`/api/sessions/${params.sessionId}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ status: newStatus })
+                            })
+                            if (response.ok) {
+                              loadData()
+                              alert('ステータスを変更しました')
+                            } else {
                               alert('ステータスの変更に失敗しました')
                             }
+                          } catch (error) {
+                            console.error('Error updating status:', error)
+                            alert('ステータスの変更に失敗しました')
                           }
-                        }}
-                        className="text-xs text-blue-600 hover:text-blue-800 underline"
-                      >
-                        作業中に戻す
-                      </button>
-                    )}
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-full text-sm border-0 ${
+                        session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                        session.status === 'archived' ? 'bg-gray-100 text-gray-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}
+                    >
+                      <option value="draft">作業中</option>
+                      <option value="confirmed">確定</option>
+                      <option value="archived">アーカイブ</option>
+                    </select>
                   </div>
                 </div>
               </div>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => router.push(`/dashboard/${params.categoryId}/${params.sessionId}`)}
-                className="btn btn-secondary flex items-center gap-2"
-              >
-                ステップビュー
-              </button>
               {skuData.length > 0 && (
                 <button onClick={exportToCSV} className="btn bg-gray-600 text-white hover:bg-gray-700 flex items-center gap-2">
                   <Download size={20} />
