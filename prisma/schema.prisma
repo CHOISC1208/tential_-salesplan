@@ -98,10 +98,11 @@ model Allocation {
   percentage    Decimal  @db.Decimal(5, 2)
   amount        BigInt
   quantity      Int
+  period        String?
   updatedAt     DateTime @updatedAt @map("updated_at")
   session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  @@unique([sessionId, hierarchyPath])
+  @@unique([sessionId, hierarchyPath, period])
   @@map("allocations")
   @@schema("sales_plane")
 }
