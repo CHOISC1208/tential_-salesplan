@@ -372,7 +372,7 @@ export default function SessionPage() {
         if (!nodeMap.has(path)) {
           const parts = path.split('/')
           const name = parts[parts.length - 1]
-          const allocation = periodAllocations.find(a => a.hierarchyPath === path)
+          const allocation = periodAllocations.find((a: Allocation & { period?: string | null }) => a.hierarchyPath === path)
 
           const node: HierarchyNode = {
             path,
