@@ -309,7 +309,7 @@ export default function SpreadsheetPage() {
     }
 
     const parentPath = pathParts.slice(0, -1).join('/')
-    const parentAlloc = allocs.find(a => a.hierarchyPath === parentPath)
+    const parentAlloc = allocs.find((a: Allocation) => a.hierarchyPath === parentPath)
 
     if (parentAlloc) {
       return parseInt(parentAlloc.amount)
@@ -621,7 +621,7 @@ export default function SpreadsheetPage() {
           // 各階層レベルの割合を掛け算
           for (let level = 1; level <= pathParts.length; level++) {
             const levelPath = pathParts.slice(0, level).join('/')
-            const levelAllocation = periodAllocations.find(a => a.hierarchyPath === levelPath)
+            const levelAllocation = periodAllocations.find((a: Allocation & { period?: string | null }) => a.hierarchyPath === levelPath)
 
             if (levelAllocation && levelAllocation.percentage > 0) {
               cumulativePercentage *= (levelAllocation.percentage / 100)
