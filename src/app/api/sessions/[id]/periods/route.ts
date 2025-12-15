@@ -110,7 +110,7 @@ export async function POST(
         },
       });
 
-      // If source has allocations, copy them. Otherwise just create empty period.
+      // If source has allocations, copy them
       if (sourceAllocations.length > 0) {
         await prisma.allocation.createMany({
           data: sourceAllocations.map(allocation => ({
@@ -123,22 +123,73 @@ export async function POST(
             period: period.trim(),
           })),
         });
+
+        return NextResponse.json({
+          success: true,
+          period: period.trim(),
+          copied: sourceAllocations.length,
+        });
+      }
+    }
+
+    // If no source to copy from, or source is empty, create placeholder allocations
+    // Get session's hierarchy structure from SKU data
+    const skuData = await prisma.skuData.findMany({
+      where: { sessionId },
+    });
+
+    const hierarchyDefinitions = await prisma.hierarchyDefinition.findMany({
+      where: { sessionId },
+      orderBy: { level: 'asc' },
+    });
+
+    if (skuData.length > 0 && hierarchyDefinitions.length > 0) {
+      // Build hierarchy paths from SKU data
+      const hierarchyPaths = new Set<string>();
+
+      for (const sku of skuData) {
+        const hierarchyValues = sku.hierarchyValues as Record<string, string>;
+
+        for (let level = 1; level <= hierarchyDefinitions.length; level++) {
+          const pathParts: string[] = [];
+
+          for (let i = 0; i < level; i++) {
+            const def = hierarchyDefinitions[i];
+            const value = hierarchyValues[def.columnName];
+            if (value) {
+              pathParts.push(value);
+            }
+          }
+
+          if (pathParts.length === level) {
+            hierarchyPaths.add(pathParts.join('/'));
+          }
+        }
       }
 
-      return NextResponse.json({
-        success: true,
+      // Create empty allocations for each hierarchy path
+      const allocations = Array.from(hierarchyPaths).map(path => ({
+        sessionId,
+        hierarchyPath: path,
+        level: path.split('/').length,
+        percentage: 0,
+        amount: BigInt(0),
+        quantity: 0,
         period: period.trim(),
-        copied: sourceAllocations.length,
-      });
-    } else {
-      // Just create an empty period marker (no actual allocations yet)
-      // The period will be available for selection in the UI
-      return NextResponse.json({
-        success: true,
-        period: period.trim(),
-        copied: 0,
-      });
+      }));
+
+      if (allocations.length > 0) {
+        await prisma.allocation.createMany({
+          data: allocations,
+        });
+      }
     }
+
+    return NextResponse.json({
+      success: true,
+      period: period.trim(),
+      copied: 0,
+    });
   } catch (error) {
     console.error('Error adding period:', error);
     return NextResponse.json(
